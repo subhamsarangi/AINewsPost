@@ -121,6 +121,17 @@ def items_missing_content(conn, limit: int = 200) -> list[Row]:
     ).fetchall()
 
 
+def expire_missing_content(conn, days: int = 7) -> int:
+    """Give up on items whose page never fetched: mark content '' so they still
+    get embedded (by title) and stop being retried. Returns rows changed."""
+    cur = conn.execute(
+        """UPDATE items SET content = ''
+           WHERE content IS NULL AND fetched_at < now() - make_interval(days => %s)""",
+        (days,),
+    )
+    return cur.rowcount
+
+
 def set_content(conn, item_id: int, content: str) -> None:
     # empty string (not NULL) marks "tried, nothing extracted" so we don't retry forever
     conn.execute("UPDATE items SET content = %s WHERE id = %s", (content, item_id))
