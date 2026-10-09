@@ -1,0 +1,59 @@
+# One entry per source. The UI builds a page for each entry automatically.
+# type: rss | hn | scrape
+# category: research | mlops | community | funding
+# default_sort: date | points
+# Replace every TODO url with the real feed / listing page before running.
+
+sources:
+  - id: hn
+    name: Hacker News
+    type: hn
+    category: community
+    default_sort: points
+    min_points: 100
+    keywords: [ai, llm, gpt, openai, anthropic, claude, gemini, "machine learning", agent, rag, transformer]
+
+  - id: the_batch
+    name: The Batch (DeepLearning.AI)
+    type: rss
+    category: mlops
+    url: TODO
+    default_sort: date
+
+  - id: arize
+    name: Arize Blog
+    type: rss
+    category: mlops
+    url: TODO
+    default_sort: date
+
+  - id: edith_yeung
+    name: Edith Yeung Newsletter
+    type: rss
+    category: funding
+    url: TODO
+    default_sort: date
+
+  # Frontier labs: use type rss if the lab has a feed, otherwise type scrape.
+  - id: openai
+    name: OpenAI Research
+    type: rss
+    category: research
+    url: TODO
+
+  - id: anthropic
+    name: Anthropic Research
+    type: scrape
+    category: research
+    url: TODO
+    selectors:            # CSS selectors for the listing page
+      item: "TODO"
+      link: "TODO"
+      title: "TODO"
+      date: "TODO"
+
+  - id: deepmind
+    name: Google DeepMind
+    type: rss
+    category: research
+    url: TODO

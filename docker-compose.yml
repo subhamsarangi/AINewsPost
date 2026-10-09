@@ -1,0 +1,17 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: ai-digest-db
+    environment:
+      POSTGRES_USER: digest
+      POSTGRES_PASSWORD: digest
+      POSTGRES_DB: digest
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # runs once, on first container start with an empty volume
+      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+
+volumes:
+  pgdata:

@@ -1,0 +1,19 @@
+[project]
+name = "ai-digest"
+version = "0.1.0"
+description = "Personal AI news digest: ingest, dedup, rank, PDF, search UI"
+requires-python = ">=3.12"
+dependencies = [
+    "openai>=1.40",
+    "psycopg[binary]>=3.2",
+    "pgvector>=0.3",
+    "feedparser>=6.0",
+    "httpx>=0.27",
+    "selectolax>=0.3",
+    "trafilatura>=1.12",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0",
+    "jinja2>=3.1",
+    "playwright>=1.47",   # PDF rendering (no GTK needed on Windows)
+    "streamlit>=1.40",
+]
