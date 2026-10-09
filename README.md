@@ -1,19 +1,17 @@
 # AI NEWSPOST
+Personal, local-only AI news system for one user (Windows, uses `uv`).
 
 ### Sources
-
-HN: official Firebase/Algolia API, or filtered RSS (hnrss.org with points thresholds and AI keywords)
-Arize blog, DeepLearning.ai The Batch, Edith Yeung’s newsletter: RSS/Substack/Beehiiv feeds
-Frontier lab research pages (OpenAI, Anthropic, DeepMind, Meta AI, etc.): some have RSS, others don’t, so these need a small scraper or a “page-change watcher”
-
+Hacker News (AI posts), The Batch (DeepLearning.AI, weekly), Arize blog, frontier lab research pages (OpenAI, Anthropic, DeepMind, etc.), Edith Yeung's weekly newsletter (startup funding).
 
 ## Setup Commands
-
+```sh
 uv sync
 
 uv run playwright install chromium 
 
 docker compose up -d
+```
 
 ### Check that the container is up and the schema was applied.
 docker exec -it ai-digest-db psql -U digest -d digest -c "\dt"
@@ -39,14 +37,6 @@ uv run python -c "from digest import db; from digest.config import load_sources;
 
 ### Test Feed Sources
 (ai-digest) D:\SCRIPTS\ainewspost>uv run python -c "import feedparser; [print(u, '|', len((d:=feedparser.parse(u)).entries), 'entries | status', d.get('status'), '|', d.get('bozo_exception')) for u in ['https://openai.com/news/rss.xml','https://deepmind.google/blog/feed/basic/','https://edithyeung.substack.com/feed','https://arize.com/blog/feed/']]"
-
-```text
-https://openai.com/news/rss.xml | 1259 entries | status 200 | None
-https://deepmind.google/blog/feed/basic/ | 100 entries | status 302 | document declared as us-ascii, but parsed as utf-8
-https://edithyeung.substack.com/feed | 20 entries | status 200 | None
-https://arize.com/blog/feed/ | 10 entries | status 200 | None
-
-```
 
 ### Check RSS+DB
 uv run python -c "from digest import db; from digest.config import load_sources; from digest.ingest import rss; c=db.connect(); db.sync_sources(c, load_sources(include_todo=True)); [print(s['id'], sum(1 for i in rss.fetch(s) if db.insert_item(c,i)), 'saved') for s in load_sources() if s['type']=='rss']; c.commit(); c.close()"
