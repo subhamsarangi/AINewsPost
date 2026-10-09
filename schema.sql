@@ -23,6 +23,7 @@ CREATE TABLE items (
     num_comments  INT,                  -- HN only
     hn_url        TEXT,                 -- HN thread link
     embedding     vector(1536),
+    title_embedding vector(1536),
     tsv           tsvector GENERATED ALWAYS AS (
                     to_tsvector('english',
                       coalesce(title, '') || ' ' || coalesce(content, ''))

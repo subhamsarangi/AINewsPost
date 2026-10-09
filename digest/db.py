@@ -152,6 +152,22 @@ def set_embedding(conn, item_id: int, embedding) -> None:
     )
 
 
+def items_missing_title_embedding(conn, limit: int = 200) -> list[Row]:
+    return conn.execute(
+        """SELECT id, title FROM items
+           WHERE title_embedding IS NULL AND title IS NOT NULL AND title <> ''
+           ORDER BY fetched_at DESC LIMIT %s""",
+        (limit,),
+    ).fetchall()
+
+
+def set_title_embedding(conn, item_id: int, embedding) -> None:
+    conn.execute(
+        "UPDATE items SET title_embedding = %s WHERE id = %s",
+        (_vec(embedding), item_id),
+    )
+
+
 def set_cluster(conn, item_id: int, cluster_id: int) -> None:
     conn.execute(
         "UPDATE items SET cluster_id = %s WHERE id = %s", (cluster_id, item_id)
@@ -170,25 +186,28 @@ def set_starred(conn, item_id: int, starred: bool) -> None:
 # Items: dedup + ranking reads
 # --------------------------------------------------------------------------
 def nearest_recent(
-    conn, embedding, days: int = 14, limit: int = 5, exclude_id: int | None = None
+    conn, title_embedding, days: int = 14, limit: int = 5, exclude_id: int | None = None
 ) -> list[Row]:
-    """Closest already-clustered items from the last `days`. similarity = cosine."""
+    """Closest already-clustered items from the last `days`, by TITLE embedding.
+    similarity = cosine."""
     return conn.execute(
-        """SELECT id, cluster_id, 1 - (embedding <=> %(e)s) AS similarity
+        """SELECT id, cluster_id, 1 - (title_embedding <=> %(e)s) AS similarity
            FROM items
-           WHERE embedding IS NOT NULL AND cluster_id IS NOT NULL
+           WHERE title_embedding IS NOT NULL AND cluster_id IS NOT NULL
              AND (%(ex)s::bigint IS NULL OR id <> %(ex)s)
              AND coalesce(published_at, fetched_at) >= now() - make_interval(days => %(d)s)
-           ORDER BY embedding <=> %(e)s LIMIT %(n)s""",
-        {"e": _vec(embedding), "ex": exclude_id, "d": days, "n": limit},
+           ORDER BY title_embedding <=> %(e)s LIMIT %(n)s""",
+        {"e": _vec(title_embedding), "ex": exclude_id, "d": days, "n": limit},
     ).fetchall()
 
 
 def items_unclustered(conn) -> list[Row]:
-    rows = conn.execute("""SELECT id, embedding FROM items
-           WHERE embedding IS NOT NULL AND cluster_id IS NULL ORDER BY id""").fetchall()
+    rows = conn.execute(
+        """SELECT id, title_embedding FROM items
+           WHERE title_embedding IS NOT NULL AND cluster_id IS NULL ORDER BY id"""
+    ).fetchall()
     for r in rows:
-        r["embedding"] = _np(r["embedding"])
+        r["title_embedding"] = _np(r["title_embedding"])
     return rows
 
 

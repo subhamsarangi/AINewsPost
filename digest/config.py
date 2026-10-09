@@ -46,7 +46,7 @@ def get_settings() -> Settings:
         embed_model=os.getenv("EMBED_MODEL", "text-embedding-3-small"),
         chat_model=os.getenv("CHAT_MODEL", "gpt-4o-mini"),
         digest_max_items=int(os.getenv("DIGEST_MAX_ITEMS", "5")),
-        dedup_threshold=float(os.getenv("DEDUP_THRESHOLD", "0.88")),
+        dedup_threshold=float(os.getenv("DEDUP_THRESHOLD", "0.82")),
         hn_min_points=int(os.getenv("HN_MIN_POINTS", "100")),
     )
 
