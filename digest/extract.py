@@ -35,6 +35,7 @@ SKIP_HOSTS = {
     "news.ycombinator.com",
     "linkedin.com",
     "facebook.com",
+    "reddit.com",
 }
 
 
