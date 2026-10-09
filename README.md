@@ -73,3 +73,9 @@ docker exec -it ai-digest-db psql -U digest -d digest -c "update items set clust
 
 ### Check Search
 uv run python -c "from digest import db, search; c=db.connect(); [print(round(r['score'],4), r['source_id'], r['title'][:60]) for r in search.search(c,'agent evaluation')]; c.close()"
+
+## Check Ranking (prefilter)
+uv run python -c "from digest import db, rank; c=db.connect(); [print(round(r['score'],3), round(r['sim'],3), r['source_id'], r['title'][:60]) for r in rank.prefilter(c, since_hours=720)]; c.close()"
+
+## Check Ranking Select (LLM)
+uv run python -c "from digest import db, rank; c=db.connect(); [print(p['id'], p['reason']) for p in rank.select(c, since_hours=720)]; c.close()"

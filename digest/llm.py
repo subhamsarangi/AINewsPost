@@ -106,7 +106,10 @@ Order picks best first."""
 
 
 def pick_top(candidates: list[dict], interest: str, max_items: int = 5) -> list[dict]:
-    """candidates: dicts from db.rank_candidates. Returns [{'id', 'reason'}, ...]."""
+    """candidates: dicts from db.rank_candidates. Returns [{'id', 'reason'}, ...].
+
+    [] means the model found nothing worth reading. Unparseable output raises ValueError.
+    """
     if not candidates:
         return []
     lines = []
@@ -125,9 +128,11 @@ def pick_top(candidates: list[dict], interest: str, max_items: int = 5) -> list[
     )
     try:
         picks = _parse_json(raw).get("picks", [])
-    except (json.JSONDecodeError, AttributeError):
-        log.error("pick_top: bad JSON from model: %r", raw[:200])
-        return []
+        if not isinstance(picks, list):
+            raise TypeError("'picks' is not a list")
+    except (json.JSONDecodeError, AttributeError, TypeError) as e:
+        # raise (not []) so the caller can tell "bad output" from "nothing worth reading"
+        raise ValueError(f"pick_top: bad model output: {raw[:200]!r}") from e
 
     valid = {c["id"] for c in candidates}
     result: list[dict] = []
