@@ -275,18 +275,9 @@ _SORTS = {
 }
 
 
-def list_items(
-    conn,
-    source_id: str | None = None,
-    category: str | None = None,
-    since: datetime | None = None,
-    starred: bool | None = None,
-    sort: str = "date",
-    limit: int = 20,
-    offset: int = 0,
-) -> list[Row]:
-    """Browse mode (no search query). All filters optional."""
-    where, params = ["true"], {"limit": limit, "offset": offset}
+def _filter_sql(source_id, category, since, starred) -> tuple[str, dict]:
+    """Shared WHERE clause (aliases: i = items, s = sources) and its params."""
+    where, params = ["true"], {}
     if source_id:
         where.append("i.source_id = %(source_id)s")
         params["source_id"] = source_id
@@ -299,14 +290,87 @@ def list_items(
     if starred is not None:
         where.append("i.starred = %(starred)s")
         params["starred"] = starred
+    return " AND ".join(where), params
+
+
+_LIST_COLS = """i.id, i.source_id, s.name AS source_name, s.category, i.title,
+                i.url, i.published_at, i.points, i.num_comments, i.starred,
+                left(coalesce(i.summary, i.content, ''), 300) AS snippet"""
+
+
+def list_items(
+    conn,
+    source_id: str | None = None,
+    category: str | None = None,
+    since: datetime | None = None,
+    starred: bool | None = None,
+    sort: str = "date",
+    limit: int = 20,
+    offset: int = 0,
+) -> list[Row]:
+    """Browse mode (no search query). All filters optional."""
+    where, params = _filter_sql(source_id, category, since, starred)
+    params.update(limit=limit, offset=offset)
     order = _SORTS.get(sort, _SORTS["date"])
     return conn.execute(
-        f"""SELECT i.id, i.source_id, s.name AS source_name, s.category, i.title,
-                   i.url, i.published_at, i.points, i.num_comments, i.starred,
-                   left(coalesce(i.summary, i.content, ''), 300) AS snippet
+        f"""SELECT {_LIST_COLS}
             FROM items i JOIN sources s ON s.id = i.source_id
-            WHERE {' AND '.join(where)}
+            WHERE {where}
             ORDER BY {order} LIMIT %(limit)s OFFSET %(offset)s""",
+        params,
+    ).fetchall()
+
+
+def hybrid_search(
+    conn,
+    text: str,
+    embedding=None,
+    source_id: str | None = None,
+    category: str | None = None,
+    since: datetime | None = None,
+    starred: bool | None = None,
+    limit: int = 20,
+    offset: int = 0,
+    min_similarity: float = 0.25,
+) -> list[Row]:
+    """Full-text + vector search merged with Reciprocal Rank Fusion (k=60).
+
+    Leg 1: Postgres FTS (websearch syntax: quotes, OR, -exclude) by ts_rank_cd.
+    Leg 2: pgvector cosine on the body embedding, only above `min_similarity`
+           (so a query with no real match returns nothing instead of noise).
+    embedding=None skips leg 2 (keyword-only). Rows are list_items rows + score.
+    """
+    where, params = _filter_sql(source_id, category, since, starred)
+    params.update(
+        q=text,
+        pool=max(50, (offset + limit) * 2),
+        limit=limit,
+        offset=offset,
+        minsim=min_similarity,
+    )
+    legs = [f"""SELECT id, row_number() OVER (ORDER BY rnk DESC) AS r FROM (
+                  SELECT i.id, ts_rank_cd(i.tsv, tq.query) AS rnk
+                  FROM items i JOIN sources s ON s.id = i.source_id
+                  CROSS JOIN websearch_to_tsquery('english', %(q)s) AS tq(query)
+                  WHERE {where} AND i.tsv @@ tq.query
+                  ORDER BY rnk DESC LIMIT %(pool)s) t"""]
+    if embedding is not None:
+        params["e"] = _vec(embedding)
+        legs.append(f"""SELECT id, row_number() OVER (ORDER BY dist) AS r FROM (
+                  SELECT i.id, i.embedding <=> %(e)s AS dist
+                  FROM items i JOIN sources s ON s.id = i.source_id
+                  WHERE {where} AND i.embedding IS NOT NULL
+                    AND 1 - (i.embedding <=> %(e)s) >= %(minsim)s
+                  ORDER BY dist LIMIT %(pool)s) t""")
+    return conn.execute(
+        f"""WITH ranked AS ({' UNION ALL '.join(legs)}),
+                 fused AS (SELECT id, sum(1.0 / (60 + r))::float8 AS score
+                           FROM ranked GROUP BY id)
+            SELECT {_LIST_COLS}, f.score
+            FROM fused f JOIN items i ON i.id = f.id
+                 JOIN sources s ON s.id = i.source_id
+            ORDER BY f.score DESC, coalesce(i.published_at, i.fetched_at) DESC
+            LIMIT %(limit)s OFFSET %(offset)s""",
         params,
     ).fetchall()
 
