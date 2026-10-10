@@ -4,6 +4,7 @@ import json
 import logging
 import re
 
+import openai
 from openai import OpenAI
 
 from .config import get_settings
@@ -34,6 +35,28 @@ def usage_report() -> str:
         f"openai: {u['calls']} calls, {u['embed_tokens']} embed tokens, "
         f"{u['chat_in']} chat in, {u['chat_out']} chat out"
     )
+
+
+def explain(exc: Exception) -> str | None:
+    """Friendly message for an OpenAI API error, or None if exc is not one.
+    Entry points use this so the CLI never imports openai itself."""
+    if isinstance(exc, openai.AuthenticationError):
+        return "OpenAI rejected the API key. Check OPENAI_API_KEY in .env."
+    if isinstance(exc, openai.NotFoundError):
+        return (
+            "OpenAI says a model was not found. Check CHAT_MODEL and EMBED_MODEL in .env "
+            "against the models your account can use."
+        )
+    if isinstance(exc, openai.RateLimitError):
+        return (
+            "OpenAI rate limit or quota exceeded. Check billing and usage limits at "
+            "platform.openai.com. Progress is saved; rerun later."
+        )
+    if isinstance(exc, openai.APIConnectionError):
+        return "Cannot reach OpenAI (network down or blocked?). Progress is saved; rerun later."
+    if isinstance(exc, openai.APIStatusError):
+        return f"OpenAI API error {exc.status_code}. Progress is saved; rerun later."
+    return None
 
 
 # --------------------------------------------------------------------------

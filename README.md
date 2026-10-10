@@ -11,14 +11,16 @@ uv sync
 uv run playwright install chromium 
 
 docker compose up -d
-```
 
-### Check that the container is up and the schema was applied.
-docker exec -it ai-digest-db psql -U digest -d digest -c "\dt"
+uv run python -m digest run
+```
 
 ---
 
 ## Other Commands
+
+### Check that the container is up and the schema was applied.
+docker exec -it ai-digest-db psql -U digest -d digest -c "\dt"
 
 ### Check config file
 uv run python -c "from digest.config import load_sources; print(load_sources())"
@@ -36,7 +38,7 @@ uv run python -c "from digest.config import load_sources; from digest.ingest imp
 uv run python -c "from digest import db; from digest.config import load_sources; from digest.ingest import hn; src=[s for s in load_sources() if s['id']=='hn'][0]; items=hn.fetch(src); c=db.connect(); db.sync_sources(c, load_sources()); n=sum(1 for i in items if db.insert_item(c,i)); db.record_fetch(c,'hn','ok',len(items)); c.commit(); c.close(); print(n,'saved')"
 
 ### Test Feed Sources
-(ai-digest) D:\SCRIPTS\ainewspost>uv run python -c "import feedparser; [print(u, '|', len((d:=feedparser.parse(u)).entries), 'entries | status', d.get('status'), '|', d.get('bozo_exception')) for u in ['https://openai.com/news/rss.xml','https://deepmind.google/blog/feed/basic/','https://edithyeung.substack.com/feed','https://arize.com/blog/feed/']]"
+uv run python -c "import feedparser; [print(u, '|', len((d:=feedparser.parse(u)).entries), 'entries | status', d.get('status'), '|', d.get('bozo_exception')) for u in ['https://openai.com/news/rss.xml','https://deepmind.google/blog/feed/basic/','https://edithyeung.substack.com/feed','https://arize.com/blog/feed/']]"
 
 ### Check RSS+DB
 uv run python -c "from digest import db; from digest.config import load_sources; from digest.ingest import rss; c=db.connect(); db.sync_sources(c, load_sources(include_todo=True)); [print(s['id'], sum(1 for i in rss.fetch(s) if db.insert_item(c,i)), 'saved') for s in load_sources() if s['type']=='rss']; c.commit(); c.close()"
@@ -85,3 +87,10 @@ uv run python -c "from digest import pipeline; r=pipeline.run(dry_run=True); [pr
 
 ## Check PDF generation (no LLM calls)
 uv run python -m digest.pdf
+
+## Check Full Run Rebuild
+uv run python -m digest run --force       rebuild today's digest
+
+## Check Partial Runs
+uv run python -m digest run --dry-run     picks only, no summaries, no PDF
+uv run python -m digest run --no-fetch    skip fetching
