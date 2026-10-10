@@ -6,7 +6,10 @@ Usage:
 The context manager commits on success, rolls back on error, then closes.
 """
 
+import logging
+import time
 from datetime import date, datetime
+from urllib.parse import urlsplit
 
 import numpy as np
 import psycopg
@@ -15,13 +18,149 @@ from psycopg.rows import dict_row
 
 from .config import get_settings
 
+log = logging.getLogger(__name__)
+
 Row = dict
 
+REQUIRED_TABLES = {"sources", "items", "digests", "digest_items"}
+CONNECTION_ERRORS = (psycopg.OperationalError, psycopg.InterfaceError)
 
-def connect() -> psycopg.Connection:
-    conn = psycopg.connect(get_settings().database_url, row_factory=dict_row)
-    register_vector(conn)
+
+class DatabaseProblem(RuntimeError):
+    """The database is unreachable, rejected us, or has the wrong schema.
+
+    The message is a human-readable fix. Entry points (CLI, UI) catch this and
+    show the message without a traceback.
+    """
+
+
+def _target() -> str:
+    """host:port/dbname from DATABASE_URL, never the password."""
+    u = urlsplit(get_settings().database_url)
+    return f"{u.hostname or 'localhost'}:{u.port or 5432}{u.path or ''}"
+
+
+def explain(exc: Exception) -> str:
+    """Turn a psycopg error into a message that says what to do."""
+    text, target = str(exc).lower(), _target()
+    if "password authentication failed" in text or (
+        "role" in text and "does not exist" in text
+    ):
+        return (
+            f"Postgres at {target} rejected the login. If a different Postgres runs on "
+            "this machine's port 5432 you are talking to it instead of the container: "
+            "stop it, or change the port mapping in docker-compose.yml and DATABASE_URL."
+        )
+    if "database" in text and "does not exist" in text:
+        return (
+            f"Database not found at {target}. A fresh start recreates it: "
+            "docker compose down -v, then docker compose up -d (this deletes data)."
+        )
+    if "starting up" in text or "recovery mode" in text:
+        return f"Postgres at {target} is still starting. Wait a few seconds and retry."
+    if any(
+        k in text
+        for k in (
+            "connection refused",
+            "could not connect",
+            "timeout expired",
+            "connection failed",
+            "could not translate host",
+            "failed to resolve host",
+            "name or service not known",
+            "getaddrinfo",
+        )
+    ):
+        return (
+            f"Cannot reach Postgres at {target}. Start it with: docker compose up -d "
+            "(is Docker Desktop running?)"
+        )
+    if any(
+        k in text
+        for k in (
+            "closed the connection",
+            "terminating connection",
+            "connection already closed",
+            "connection is closed",
+            "server closed",
+            "connection lost",
+        )
+    ):
+        return (
+            "Lost the connection to Postgres mid-run. Everything already finished is "
+            "saved. Check the container (docker ps) and rerun to resume."
+        )
+    return f"Database error at {target}: {exc}"
+
+
+def connect(retries: int = 3) -> psycopg.Connection:
+    """Open a connection. Retries briefly (1s, 2s) for a container that is still
+    starting; fails at once on a wrong password or missing database."""
+    delay = 1.0
+    for attempt in range(1, retries + 1):
+        try:
+            conn = psycopg.connect(
+                get_settings().database_url, row_factory=dict_row, connect_timeout=5
+            )
+            break
+        except psycopg.OperationalError as e:
+            text = str(e).lower()
+            permanent = "authentication failed" in text or "does not exist" in text
+            if permanent or attempt == retries:
+                raise DatabaseProblem(explain(e)) from e
+            log.warning(
+                "database not reachable (attempt %d/%d), retrying in %.0fs",
+                attempt,
+                retries,
+                delay,
+            )
+            time.sleep(delay)
+            delay *= 2
+    try:
+        register_vector(conn)
+    except (
+        psycopg.ProgrammingError
+    ) as e:  # pgvector extension missing: schema never applied
+        conn.close()
+        raise DatabaseProblem(
+            f"The pgvector extension is missing in {_target()}, so schema.sql never ran. "
+            "Fresh start: docker compose down -v, then docker compose up -d "
+            "(this deletes data)."
+        ) from e
     return conn
+
+
+def check() -> None:
+    """Fail fast, before any network work, if the database is unusable.
+    Raises DatabaseProblem with the fix."""
+    with connect() as conn:
+        tables = {
+            r["table_name"]
+            for r in conn.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = 'public'"
+            ).fetchall()
+        }
+        missing = REQUIRED_TABLES - tables
+        if missing:
+            raise DatabaseProblem(
+                f"Schema not applied (missing tables: {', '.join(sorted(missing))}). "
+                "Fresh start: docker compose down -v, then docker compose up -d "
+                "(this deletes data)."
+            )
+        cols = {
+            r["column_name"]
+            for r in conn.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'items'"
+            ).fetchall()
+        }
+        if "title_embedding" not in cols:
+            raise DatabaseProblem(
+                "Schema is out of date: items.title_embedding is missing. Run: docker exec "
+                "-it ai-digest-db psql -U digest -d digest -c "
+                '"ALTER TABLE items ADD COLUMN title_embedding vector(1536)"'
+            )
 
 
 def _vec(v) -> np.ndarray:
@@ -394,6 +533,17 @@ def save_digest(conn, digest_date: date, pdf_path: str, item_ids: list[int]) -> 
             (digest_id, item_id, rank),
         )
     return digest_id
+
+
+def get_digest(conn, digest_date: date) -> Row | None:
+    return conn.execute(
+        "SELECT id, date, pdf_path FROM digests WHERE date = %s", (digest_date,)
+    ).fetchone()
+
+
+def delete_digest(conn, digest_date: date) -> None:
+    """Remove a day's digest and its item links (cascade). The PDF file stays."""
+    conn.execute("DELETE FROM digests WHERE date = %s", (digest_date,))
 
 
 def list_digests(conn, limit: int = 60) -> list[Row]:
