@@ -82,3 +82,6 @@ uv run python -c "from digest import db, rank; c=db.connect(); [print(p['id'], p
 
 ## Check Pipeline DRY RUN (no PDF, no summary)
 uv run python -c "from digest import pipeline; r=pipeline.run(dry_run=True); [print(p['id'], p['title'][:60], '|', p['reason']) for p in r['picks']]; print(r['note']); [print(s) for s in r['sources']]"
+
+## Check PDF generation (no LLM calls)
+uv run python -m digest.pdf

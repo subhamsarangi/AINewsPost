@@ -1,19 +1,133 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>AI Digest {{ date }}</title>
-  <style>
-    body { font-family: Georgia, serif; line-height: 1.5; margin: 2cm; }
-    h1 { margin-bottom: 0; }
-    .meta { color: #666; font-size: 0.9em; }
-    .item { page-break-before: always; }
-    .full-text { white-space: pre-wrap; }
-  </style>
+<meta charset="utf-8">
+<title>AI Digest {{ date_long }}</title>
+<style>
+  @page { size: A4; margin: 18mm 18mm 20mm 18mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: Georgia, Cambria, "Times New Roman", serif;
+    font-size: 11pt; line-height: 1.5; color: #1c1c1e; margin: 0;
+  }
+  a { color: #1a56b0; text-decoration: none; }
+  .sans { font-family: "Segoe UI", Calibri, Arial, Helvetica, sans-serif; }
+
+  /* ---------- cover ---------- */
+  .cover h1 { font-family: "Segoe UI", Calibri, Arial, sans-serif; font-size: 34pt;
+              margin: 0 0 2pt 0; letter-spacing: -0.5pt; }
+  .cover .date { font-family: "Segoe UI", Calibri, Arial, sans-serif; color: #666;
+                 font-size: 13pt; margin-bottom: 22pt; }
+  .cover .count { font-family: "Segoe UI", Calibri, Arial, sans-serif; color: #666;
+                  font-size: 10pt; text-transform: uppercase; letter-spacing: 1pt;
+                  border-bottom: 1.5pt solid #1c1c1e; padding-bottom: 4pt; margin-bottom: 10pt; }
+  .index-item { display: flex; gap: 12pt; padding: 9pt 0; border-bottom: 0.5pt solid #ddd;
+                break-inside: avoid; }
+  .index-num { font-family: "Segoe UI", Calibri, Arial, sans-serif; font-size: 20pt;
+               font-weight: 700; color: #bbb; width: 24pt; flex: none; line-height: 1.1; }
+  .index-title { font-size: 12.5pt; font-weight: 700; line-height: 1.3; }
+  .index-meta { font-family: "Segoe UI", Calibri, Arial, sans-serif; font-size: 9pt; color: #777;
+                margin-top: 2pt; }
+  .index-why { font-size: 10pt; color: #555; margin-top: 3pt; font-style: italic; }
+
+  /* ---------- items ---------- */
+  .item-summary, .item-text { break-before: page; }
+  .badges { font-family: "Segoe UI", Calibri, Arial, sans-serif; font-size: 8.5pt;
+            text-transform: uppercase; letter-spacing: 0.8pt; margin-bottom: 8pt; }
+  .badge { display: inline-block; padding: 2pt 7pt; border-radius: 9pt; color: #fff;
+           margin-right: 6pt; font-weight: 600; }
+  .cat-research { background: #2b6cb0; } .cat-mlops { background: #2f855a; }
+  .cat-community { background: #c05621; } .cat-funding { background: #6b46c1; }
+  .cat-none { background: #718096; }
+  .src { color: #555; }
+  h2.title { font-family: "Segoe UI", Calibri, Arial, sans-serif; font-size: 22pt; line-height: 1.2;
+             margin: 0 0 6pt 0; letter-spacing: -0.3pt; }
+  .meta { font-family: "Segoe UI", Calibri, Arial, sans-serif; font-size: 9.5pt; color: #666;
+          margin-bottom: 4pt; }
+  .url { font-family: "Segoe UI", Calibri, Arial, sans-serif; font-size: 8.5pt; color: #888;
+         word-break: break-all; margin-bottom: 14pt; }
+  .label { font-family: "Segoe UI", Calibri, Arial, sans-serif; font-size: 9pt; font-weight: 700;
+           text-transform: uppercase; letter-spacing: 1pt; color: #888; margin: 16pt 0 6pt 0; }
+  ul.bullets { margin: 0; padding-left: 16pt; }
+  ul.bullets li { margin-bottom: 7pt; }
+  .why { margin-top: 14pt; padding: 10pt 12pt; background: #f3f6fb; border-left: 3pt solid #2b6cb0;
+         font-size: 10.5pt; }
+  .why b { font-family: "Segoe UI", Calibri, Arial, sans-serif; }
+  .pick-reason { font-size: 9.5pt; color: #666; font-style: italic; margin-top: 12pt; }
+  .also { font-family: "Segoe UI", Calibri, Arial, sans-serif; font-size: 9.5pt; color: #555;
+          margin-top: 6pt; }
+  .also div { margin-bottom: 3pt; }
+  .nosummary { color: #888; font-style: italic; }
+
+  .text-head { font-family: "Segoe UI", Calibri, Arial, sans-serif; font-size: 9pt; color: #888;
+               text-transform: uppercase; letter-spacing: 1pt; border-bottom: 0.5pt solid #ccc;
+               padding-bottom: 4pt; margin-bottom: 12pt; }
+  .text-head b { color: #1c1c1e; }
+  .fulltext p { margin: 0 0 9pt 0; font-size: 10.5pt; line-height: 1.55; orphans: 3; widows: 3; }
+  .notext { padding: 14pt; background: #fdf6ec; border-left: 3pt solid #c05621; font-size: 10.5pt; }
+</style>
 </head>
 <body>
+
+<section class="cover">
   <h1>AI Digest</h1>
-  <p class="meta">{{ date }}</p>
-  <!-- TODO: cover index, then per item: summary page, then full text -->
+  <div class="date">{{ date_long }}</div>
+  <div class="count">{{ items|length }} item{{ '' if items|length == 1 else 's' }} worth your time</div>
+  {% for it in items %}
+  <div class="index-item">
+    <div class="index-num">{{ it.number }}</div>
+    <div>
+      <div class="index-title">{{ it.title }}</div>
+      <div class="index-meta">{{ it.source_name }}{% if it.category %} &middot; {{ it.category }}{% endif %}{% if it.date_str %} &middot; {{ it.date_str }}{% endif %}</div>
+      {% if it.reason %}<div class="index-why">{{ it.reason }}</div>{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</section>
+
+{% for it in items %}
+<section class="item-summary">
+  <div class="badges">
+    <span class="badge cat-{{ it.category or 'none' }}">{{ it.category or 'other' }}</span>
+    <span class="src">{{ it.source_name }}</span>
+  </div>
+  <h2 class="title"><a href="{{ it.url }}">{{ it.title }}</a></h2>
+  <div class="meta">
+    {% if it.date_str %}{{ it.date_str }}{% endif %}
+    {% if it.hn_line %}{% if it.date_str %} &middot; {% endif %}{{ it.hn_line }}
+      {% if it.hn_url %} &middot; <a href="{{ it.hn_url }}">HN discussion</a>{% endif %}{% endif %}
+  </div>
+  <div class="url">{{ it.url }}</div>
+
+  <div class="label">Summary</div>
+  {% if it.bullets or it.paras %}
+    {% if it.bullets %}<ul class="bullets">{% for b in it.bullets %}<li>{{ b }}</li>{% endfor %}</ul>{% endif %}
+    {% for p in it.paras %}<p>{{ p }}</p>{% endfor %}
+    {% if it.why %}<div class="why"><b>Why it matters.</b> {{ it.why }}</div>{% endif %}
+  {% else %}
+    <p class="nosummary">Summary unavailable for this item. The full text follows on the next page.</p>
+  {% endif %}
+
+  {% if it.also_covered %}
+  <div class="label">Also covered by</div>
+  <div class="also">
+    {% for m in it.also_covered %}<div>{{ m.source_name }}: <a href="{{ m.url }}">{{ m.title }}</a></div>{% endfor %}
+  </div>
+  {% endif %}
+  {% if it.reason %}<div class="pick-reason">Picked because: {{ it.reason }}</div>{% endif %}
+</section>
+
+<section class="item-text">
+  <div class="text-head">Full text &middot; <b>{{ it.title }}</b></div>
+  {% if it.text_paras %}
+    <div class="fulltext">{% for p in it.text_paras %}<p>{{ p }}</p>{% endfor %}</div>
+  {% else %}
+    <div class="notext">The full text was not available (the page blocked automated access, needs
+    a login, or has no extractable article body).<br>Read it at the source:
+    <a href="{{ it.url }}">{{ it.url }}</a></div>
+  {% endif %}
+</section>
+{% endfor %}
+
 </body>
 </html>
