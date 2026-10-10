@@ -1,8 +1,10 @@
 # AI NEWSPOST
-Personal, local-only AI news system for one user (Windows, uses `uv`).
+Personal, local-only AI news system.
 
 ### Sources
 Hacker News (AI posts), The Batch (DeepLearning.AI, weekly), Arize blog, frontier lab research pages (OpenAI, Anthropic, DeepMind, etc.), Edith Yeung's weekly newsletter (startup funding).
+
+<img src="home-ui.png" width="500">
 
 ## Setup Commands
 ```sh
