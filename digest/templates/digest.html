@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>AI Digest {{ date_long }}</title>
+<title>AINewsPost {{ date_long }}</title>
 <style>
   @page { size: A4; margin: 18mm 18mm 20mm 18mm; }
   * { box-sizing: border-box; }
@@ -70,7 +70,7 @@
 <body>
 
 <section class="cover">
-  <h1>AI Digest</h1>
+  <h1>AINewsPost</h1>
   <div class="date">{{ date_long }}</div>
   <div class="count">{{ items|length }} item{{ '' if items|length == 1 else 's' }} worth your time</div>
   {% for it in items %}

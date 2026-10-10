@@ -13,6 +13,8 @@ uv run playwright install chromium
 docker compose up -d
 
 uv run python -m digest run
+
+streamlit run ui/app.py --server.headless true --server.port 8599
 ```
 
 ---

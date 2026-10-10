@@ -20,7 +20,7 @@ TEMPLATE_DIR = Path(__file__).parent / "templates"
 
 FOOTER = (
     '<div style="width:100%;font-size:8px;color:#888;text-align:center;'
-    'font-family:Arial,sans-serif;">AI Digest &middot; page '
+    'font-family:Arial,sans-serif;">AINewsPost &middot; page '
     '<span class="pageNumber"></span> of <span class="totalPages"></span></div>'
 )
 
