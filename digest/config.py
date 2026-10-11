@@ -38,11 +38,15 @@ def get_settings() -> Settings:
     key = os.getenv("OPENAI_API_KEY", "")
     if not key or key.startswith("sk-..."):
         log.warning("OPENAI_API_KEY is not set in .env")
+    
+    # Use Supabase URL if set, else fall back to local Postgres
+    db_url = os.getenv("SUPABASE_DATABASE_URL") or os.getenv(
+        "DATABASE_URL", "postgresql://digest:digest@localhost:5432/digest"
+    )
+    
     return Settings(
         openai_api_key=key,
-        database_url=os.getenv(
-            "DATABASE_URL", "postgresql://digest:digest@localhost:5432/digest"
-        ),
+        database_url=db_url,
         embed_model=os.getenv("EMBED_MODEL", "text-embedding-3-small"),
         chat_model=os.getenv("CHAT_MODEL", "gpt-4o-mini"),
         digest_max_items=int(os.getenv("DIGEST_MAX_ITEMS", "5")),
