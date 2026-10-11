@@ -43,6 +43,14 @@ def _date(d: datetime | None) -> str:
     return d.strftime("%b %d, %Y").replace(" 0", " ") if d else ""
 
 
+def render_summary(summary: str) -> None:
+    """Summary markdown; 'Why it matters' gets its own paragraph (markdown would
+    otherwise glue it onto the last bullet)."""
+    st.markdown(
+        re.sub(r"\n\s*Why it matters:", "\n\n**Why it matters:**", summary, flags=re.I)
+    )
+
+
 def _snippet(text: str | None, limit: int = 220) -> str:
     """One readable paragraph from a summary or article start (bullets become ' • ')."""
     text = re.sub(r"(^|\n)\s*[-*•]\s+", " • ", text or "")
@@ -86,14 +94,21 @@ def _health_caption(source_id: str) -> None:
 # feed list
 # --------------------------------------------------------------------------
 def feed_view(
-    page_key: str, title: str, source: dict | None = None, starred_only: bool = False
+    page_key: str,
+    title: str,
+    source: dict | None = None,
+    starred_only: bool = False,
+    header_extra=None,
 ) -> None:
+    """header_extra: optional callable that draws something under the title (list view only)."""
     ss = st.session_state
     open_key = f"open_{page_key}"
     if ss.get(open_key):
         return item_detail(page_key, ss[open_key])
 
     st.title(title)
+    if header_extra:
+        header_extra()
     if source:
         _health_caption(source["id"])
 
@@ -226,15 +241,7 @@ def item_detail(page_key: str, item_id: int) -> None:
 
     st.subheader("Summary")
     if item["summary"]:
-        # blank line first: markdown would otherwise glue this line onto the last bullet
-        st.markdown(
-            re.sub(
-                r"\n\s*Why it matters:",
-                "\n\n**Why it matters:**",
-                item["summary"],
-                flags=re.I,
-            )
-        )
+        render_summary(item["summary"])
     else:
         st.caption("No summary yet. Only items picked for a digest are summarized.")
 

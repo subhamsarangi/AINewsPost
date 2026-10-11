@@ -19,12 +19,18 @@ _client: OpenAI | None = None
 _usage = {"calls": 0, "embed_tokens": 0, "chat_in": 0, "chat_out": 0}
 
 
+class MissingAPIKey(RuntimeError):
+    """OPENAI_API_KEY is not set (or still the placeholder from .env.example)."""
+
+
 def client() -> OpenAI:
     global _client
     if _client is None:
         key = get_settings().openai_api_key
         if not key or key.startswith("sk-..."):
-            raise RuntimeError("OPENAI_API_KEY missing. Set it in .env")
+            raise MissingAPIKey(
+                "OpenAI API key is missing. Set OPENAI_API_KEY in .env."
+            )
         _client = OpenAI(api_key=key, max_retries=5, timeout=60)
     return _client
 
@@ -37,9 +43,27 @@ def usage_report() -> str:
     )
 
 
+def is_fatal(exc: Exception) -> bool:
+    """Configuration or billing problems that retrying or falling back cannot fix:
+    missing/invalid key, no access, unknown model, quota or rate limit. Callers must
+    raise these instead of quietly producing a degraded digest."""
+    return isinstance(
+        exc,
+        (
+            MissingAPIKey,
+            openai.AuthenticationError,
+            openai.PermissionDeniedError,
+            openai.NotFoundError,
+            openai.RateLimitError,
+        ),
+    )
+
+
 def explain(exc: Exception) -> str | None:
     """Friendly message for an OpenAI API error, or None if exc is not one.
     Entry points use this so the CLI never imports openai itself."""
+    if isinstance(exc, MissingAPIKey):
+        return str(exc)
     if isinstance(exc, openai.AuthenticationError):
         return "OpenAI rejected the API key. Check OPENAI_API_KEY in .env."
     if isinstance(exc, openai.NotFoundError):

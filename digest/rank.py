@@ -84,8 +84,9 @@ def prefilter(conn, since_hours: int | None = None) -> list[dict]:
 def select(conn, since_hours: int | None = None) -> list[dict]:
     """Pick up to DIGEST_MAX_ITEMS items. [] means nothing worth reading today.
 
-    If the LLM call fails (API error or unparseable output), falls back to the
-    top FALLBACK_N by prefilter score so a bad day still produces a digest.
+    If the LLM call fails for a transient reason (network, server error, unparseable
+    output), falls back to the top FALLBACK_N by prefilter score so a bad day still
+    produces a digest. Configuration/billing errors (llm.is_fatal) are raised.
     """
     top = prefilter(conn, since_hours)
     if not top:
@@ -95,6 +96,8 @@ def select(conn, since_hours: int | None = None) -> list[dict]:
     try:
         picks = llm.pick_top(top, INTEREST, max_items)
     except Exception as e:
+        if llm.is_fatal(e):  # bad key / model / quota: do not fake a digest
+            raise
         log.error(
             "rank: LLM pick failed (%s); falling back to top %d by score", e, FALLBACK_N
         )

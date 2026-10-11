@@ -1,16 +1,26 @@
-"""Page listing past digests, with a PDF download button for each."""
+"""Daily picks page: the digest for a chosen day (latest by default).
 
+Shows that day's picks with summaries, a PDF download, a cheap "Rebuild PDF"
+(from the saved picks: no fetching, no OpenAI), a dropdown for older days, and
+a "Generate today's digest" button when today has none (same as `python -m digest run`).
+"""
+
+from datetime import date
 from pathlib import Path
 
 import streamlit as st
 
-from digest import db
+from digest import db, llm
 from digest.config import ROOT
+import views
 from views import run_db
 
-MAX_DIGESTS = 14
+MAX_DIGESTS = 60
 
 
+# --------------------------------------------------------------------------
+# helpers
+# --------------------------------------------------------------------------
 @st.cache_data(show_spinner=False)
 def _read_pdf(
     path: str, mtime: float
@@ -18,26 +28,184 @@ def _read_pdf(
     return Path(path).read_bytes()
 
 
-def digests_page() -> None:
-    st.title("Digests")
-    rows = run_db(db.list_digests, MAX_DIGESTS)
-    if not rows:
-        st.info("No digests yet. Run: `uv run python -m digest run`")
-        return
-    for d in rows:
-        path = ROOT / d["pdf_path"]
-        with st.container(border=True):
-            left, right = st.columns([5, 2])
-            left.markdown(f"**{d['date']:%A, %B %d, %Y}** · {d['n_items']} items")
-            for it in run_db(db.digest_items, d["id"]):
-                left.caption(f"{it['rank']}. {it['title']}")
-            if path.exists():
-                right.download_button(
-                    "Download PDF",
-                    _read_pdf(str(path), path.stat().st_mtime),
-                    file_name=path.name,
-                    mime="application/pdf",
-                    key=f"dl_{d['id']}",
-                )
+def _friendly(exc: Exception) -> str | None:
+    """Same mapping as the CLI. None = a real bug (let it show)."""
+    if isinstance(exc, db.DatabaseProblem):
+        return str(exc)
+    return llm.explain(exc) or (str(exc) if isinstance(exc, RuntimeError) else None)
+
+
+def _flash(kind: str, msg: str) -> None:
+    """Message that survives the st.rerun() that follows an action."""
+    st.session_state["picks_flash"] = (kind, msg)
+
+
+def _show_flash() -> None:
+    kind, msg = st.session_state.pop("picks_flash", (None, None))
+    if msg:
+        {"success": st.success, "error": st.error}.get(kind, st.info)(msg)
+
+
+def _label(d: dict, today: date) -> str:
+    tag = " · today" if d["date"] == today else ""
+    return f"{d['date']:%a, %b %d, %Y}{tag} · {d['n_items']} picks"
+
+
+def _load_picks(conn, digest_id: int) -> list[dict]:
+    items = []
+    for row in db.digest_items(conn, digest_id):
+        item = db.get_item(conn, row["id"])
+        if item:
+            item["rank"] = row["rank"]
+            items.append(item)
+    return items
+
+
+# --------------------------------------------------------------------------
+# actions
+# --------------------------------------------------------------------------
+def _generate_today() -> None:
+    from digest import pipeline  # heavy import: only when needed
+
+    flash = None
+    with st.spinner(
+        "Fetching sources, ranking, summarizing and building the PDF. "
+        "This takes a few minutes. Keep this tab open."
+    ):
+        try:
+            result = pipeline.run()
+        except Exception as e:
+            msg = _friendly(e)
+            if msg is None:
+                raise
+            flash = ("error", msg)
+        else:
+            failed = [s["id"] for s in result["sources"] if s["error"]]
+            tail = (
+                f" ({len(failed)} source(s) failed: {', '.join(failed)})"
+                if failed
+                else ""
+            )
+            if result.get("pdf") and not result.get("note"):
+                flash = ("success", "Today's digest is ready." + tail)
             else:
-                right.caption("PDF file is missing from disk.")
+                flash = ("info", (result.get("note") or "Done.") + tail)
+    _flash(*flash)
+    # jump to the newest digest: forget the choice and give the dropdown a fresh identity
+    # (Streamlit keeps a keyed widget's value on the frontend, so popping its key is not enough)
+    st.session_state.pop("picks_sel", None)
+    st.session_state["picks_gen"] = st.session_state.get("picks_gen", 0) + 1
+    st.rerun()
+
+
+def _rebuild_pdf(d: dict) -> None:
+    from digest import pdf
+
+    with st.spinner("Rebuilding the PDF from the saved picks..."):
+        try:
+
+            def build(conn):
+                items = _load_picks(conn, d["id"])
+                for it in items:
+                    it["reason"] = ""  # the pick reason is not stored
+                    it["also_covered"] = (
+                        [
+                            m
+                            for m in db.cluster_members(conn, it["cluster_id"])
+                            if m["id"] != it["id"]
+                        ]
+                        if it["cluster_id"]
+                        else []
+                    )
+                return items
+
+            items = run_db(build)
+            pdf.render(d["date"], items, ROOT / d["pdf_path"])
+            _flash("success", f"PDF rebuilt for {d['date']:%b %d, %Y}.")
+        except Exception as e:
+            msg = _friendly(e)
+            if msg is None:
+                raise
+            _flash("error", msg)
+    st.rerun()
+
+
+# --------------------------------------------------------------------------
+# page
+# --------------------------------------------------------------------------
+def picks_page() -> None:
+    ss = st.session_state
+    if ss.get("open_picks"):
+        return views.item_detail("picks", ss["open_picks"])
+
+    st.title("Daily picks")
+    _show_flash()
+    digests = run_db(db.list_digests, MAX_DIGESTS)
+    today = date.today()
+
+    if not digests or digests[0]["date"] != today:
+        with st.container(border=True):
+            st.markdown(
+                "**No digest for today yet.**" if digests else "**No digests yet.**"
+            )
+            st.caption(
+                "Fetches all sources, picks the best items, summarizes them and builds "
+                "the PDF. Takes a few minutes and costs a few cents of OpenAI credit. "
+                "Same as running `uv run python -m digest run`."
+            )
+            if st.button("Generate today's digest", type="primary", key="gen_today"):
+                _generate_today()
+    if not digests:
+        return
+
+    # The selectbox's own state is dropped while the detail view is open, so the choice
+    # is also kept in a plain session key and restored through `index`.
+    ids = [d["id"] for d in digests]
+    current = ss.get("picks_sel") if ss.get("picks_sel") in ids else ids[0]
+    chosen = st.selectbox(
+        "Day",
+        ids,
+        index=ids.index(current),
+        key=f"picks_day_{ss.get('picks_gen', 0)}",
+        format_func={d["id"]: _label(d, today) for d in digests}.get,
+    )
+    ss["picks_sel"] = chosen
+    d = next(x for x in digests if x["id"] == chosen)
+
+    path = ROOT / d["pdf_path"]
+    left, mid, right = st.columns([5, 2, 2])
+    left.subheader(f"{d['date']:%A, %B %d, %Y}")
+    if path.exists():
+        mid.download_button(
+            "Download PDF",
+            _read_pdf(str(path), path.stat().st_mtime),
+            file_name=path.name,
+            mime="application/pdf",
+            key=f"dl_{d['id']}",
+        )
+    else:
+        mid.caption("PDF file is missing.")
+    if right.button(
+        "Rebuild PDF",
+        key=f"rb_{d['id']}",
+        help="Re-create the PDF from the saved picks. No fetching, no OpenAI cost.",
+    ):
+        _rebuild_pdf(d)
+
+    items = run_db(_load_picks, d["id"])
+    if not items:
+        st.info("This digest has no items.")
+    for it in items:
+        with st.container(border=True):
+            body, btns = st.columns([9, 2])
+            body.markdown(f"**{it['rank']}. {views.esc(it['title'])}**")
+            body.caption(views._meta(it))
+            if it["summary"]:
+                with body:
+                    views.render_summary(it["summary"])
+            else:
+                body.caption("No summary saved for this item.")
+            if btns.button("Details", key=f"pd_{d['id']}_{it['id']}"):
+                ss["open_picks"] = it["id"]
+                st.rerun()
+            btns.link_button("Original", it["url"])

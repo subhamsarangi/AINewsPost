@@ -136,6 +136,8 @@ def _build_items(picks: list[dict]) -> list[dict]:
                     )
                     db.set_summary(conn, item["id"], item["summary"])
                 except Exception as e:
+                    if llm.is_fatal(e):
+                        raise
                     log.error("summary failed for item %s: %s", item["id"], e)
             item["reason"] = pick["reason"]
             item["also_covered"] = [
@@ -235,6 +237,11 @@ def _run(
             result["note"] = "dry run: stopped after ranking"
             return result
 
+        if any(p["reason"].startswith("fallback") for p in picks):
+            result["note"] = (
+                "AI ranking failed (see log); these picks are the top items by "
+                "interest score instead."
+            )
         log.info("[4/5] summarizing %d picks", len(picks))
         items = _build_items(picks)
 
