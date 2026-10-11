@@ -39,6 +39,42 @@ def render(template_name: str, **context) -> str:
     return template.render(**context)
 
 
+# ============ ERROR HANDLERS ============
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Return HTML error pages instead of JSON for user-facing errors."""
+    if exc.status_code == 401:
+        return HTMLResponse(
+            render("login.html", error="Session expired. Please login again."),
+            status_code=401,
+        )
+    elif exc.status_code == 404:
+        return HTMLResponse(
+            render("error.html", status=404, message="Page not found"),
+            status_code=404,
+        )
+    elif exc.status_code >= 500:
+        return HTMLResponse(
+            render("error.html", status=exc.status_code, message="Server error. Please try again later."),
+            status_code=exc.status_code,
+        )
+    else:
+        return HTMLResponse(
+            render("error.html", status=exc.status_code, message=exc.detail),
+            status_code=exc.status_code,
+        )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Catch unhandled exceptions and show error page."""
+    return HTMLResponse(
+        render("error.html", status=500, message="An unexpected error occurred. Please try again."),
+        status_code=500,
+    )
+
+
 # ============ AUTH ============
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
@@ -360,6 +396,13 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
+    import sys
+    
+    # Windows + asyncio subprocess fix for Playwright
+    if sys.platform == "win32":
+        import asyncio
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    
     port = int(os.getenv("PORT", "8000"))
     uvicorn.run(
         "main:app",
