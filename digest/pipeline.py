@@ -252,19 +252,23 @@ async def _run(
         log.info("[5/5] rendering PDF")
         from . import pdf  # imported late: heavy (Playwright)
 
-        pdf_url = await pdf.render(today, items)
+        pdf_path = await pdf.render(today, items)
         with db.connect() as conn:
-            db.save_digest(conn, today, pdf_url, [i["id"] for i in items], owner_id=admin_id)
+            db.save_digest(
+                conn, today, pdf_path, [i["id"] for i in items], owner_id=admin_id
+            )
     except Exception:
         _restore(today, restore, admin_id)
         raise
-    result["pdf"] = pdf_url
-    log.info("digest saved: %s", pdf_url)
+    result["pdf"] = pdf_path
+    log.info("digest saved: %s", pdf_path)
     log.info(llm.usage_report())
     return result
 
 
-def _restore(today: date, restore: tuple[str, list[int]] | None, admin_id: str | None = None) -> None:
+def _restore(
+    today: date, restore: tuple[str, list[int]] | None, admin_id: str | None = None
+) -> None:
     """A failed --force rerun must not destroy the digest that already existed."""
     if not restore:
         return

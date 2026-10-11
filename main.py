@@ -41,6 +41,7 @@ def render(template_name: str, **context) -> str:
 
 # ============ ERROR HANDLERS ============
 
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     """Return HTML error pages instead of JSON for user-facing errors."""
@@ -56,7 +57,11 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         )
     elif exc.status_code >= 500:
         return HTMLResponse(
-            render("error.html", status=exc.status_code, message="Server error. Please try again later."),
+            render(
+                "error.html",
+                status=exc.status_code,
+                message="Server error. Please try again later.",
+            ),
             status_code=exc.status_code,
         )
     else:
@@ -70,12 +75,17 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 async def general_exception_handler(request: Request, exc: Exception):
     """Catch unhandled exceptions and show error page."""
     return HTMLResponse(
-        render("error.html", status=500, message="An unexpected error occurred. Please try again."),
+        render(
+            "error.html",
+            status=500,
+            message="An unexpected error occurred. Please try again.",
+        ),
         status_code=500,
     )
 
 
 # ============ AUTH ============
+
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
@@ -150,17 +160,17 @@ async def digests_page(
     from digest.config import load_sources
     from datetime import date as date_type
     import json
-    
+
     try:
         with db.connect() as conn:
             digests = db.list_digests(conn, limit=60)
-            
+
             # Get digest for requested date or today
             if date:
                 digest_obj_date = datetime.fromisoformat(date).date()
             else:
                 digest_obj_date = date_type.today()
-            
+
             today_digest = db.get_digest(conn, digest_obj_date)
             today_items = []
             if today_digest:
@@ -169,15 +179,15 @@ async def digests_page(
                     item = db.get_item(conn, row["id"])
                     if item:
                         today_items.append(item)
-        
+
         # Convert to JSON-serializable dicts
         digests_list = []
         for d in digests:
             item = dict(d)
-            if 'date' in item and hasattr(item['date'], 'isoformat'):
-                item['date'] = item['date'].isoformat()
+            if "date" in item and hasattr(item["date"], "isoformat"):
+                item["date"] = item["date"].isoformat()
             digests_list.append(item)
-        
+
         sources = load_sources()
         sources_by_category = {}
         for src in sources:
@@ -188,15 +198,17 @@ async def digests_page(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    return HTMLResponse(render(
-        "digests.html",
-        user_email=current_user["user_email"],
-        digests=json.dumps(digests_list),
-        today_items=today_items,
-        today_digest=today_digest,
-        selected_date=date or digest_obj_date.isoformat(),
-        sources_by_category=sources_by_category,
-    ))
+    return HTMLResponse(
+        render(
+            "digests.html",
+            user_email=current_user["user_email"],
+            digests=json.dumps(digests_list),
+            today_items=today_items,
+            today_digest=today_digest,
+            selected_date=date or digest_obj_date.isoformat(),
+            sources_by_category=sources_by_category,
+        )
+    )
 
 
 @app.get("/logout")
@@ -207,6 +219,7 @@ async def logout():
 
 
 # ============ PAGES ============
+
 
 @app.get("/", response_class=HTMLResponse)
 async def home(
@@ -222,7 +235,7 @@ async def home(
     """Home page with item list."""
     from digest import search as search_module
     from digest.config import load_sources
-    
+
     # Parse filters
     hours = {"24h": 24, "7d": 7 * 24, "30d": 30 * 24}.get(date_filter)
     since = datetime.now(timezone.utc) - timedelta(hours=hours) if hours else None
@@ -242,10 +255,10 @@ async def home(
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
     has_more = len(items) > 20
     items = items[:20]
-    
+
     # Load sources for sidebar, group by category
     try:
         sources = load_sources()
@@ -266,20 +279,22 @@ async def home(
         sources_by_category = {}
         source_name = None
 
-    return HTMLResponse(render(
-        "index.html",
-        user_email=current_user["user_email"],
-        items=items,
-        page=page,
-        has_more=has_more,
-        search=search,
-        date_filter=date_filter,
-        category=category,
-        source=source,
-        source_name=source_name,
-        starred=starred,
-        sources_by_category=sources_by_category,
-    ))
+    return HTMLResponse(
+        render(
+            "index.html",
+            user_email=current_user["user_email"],
+            items=items,
+            page=page,
+            has_more=has_more,
+            search=search,
+            date_filter=date_filter,
+            category=category,
+            source=source,
+            source_name=source_name,
+            starred=starred,
+            sources_by_category=sources_by_category,
+        )
+    )
 
 
 @app.get("/item/{item_slug}", response_class=HTMLResponse)
@@ -290,7 +305,7 @@ async def item_detail(
 ):
     """Item detail page."""
     from digest.config import load_sources
-    
+
     try:
         with db.connect() as conn:
             item = db.get_item_by_slug(conn, item_slug)
@@ -320,14 +335,16 @@ async def item_detail(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    return HTMLResponse(render(
-        "item_detail.html",
-        user_email=current_user["user_email"],
-        item=item,
-        similar=similar,
-        others=others,
-        sources_by_category=sources_by_category,
-    ))
+    return HTMLResponse(
+        render(
+            "item_detail.html",
+            user_email=current_user["user_email"],
+            item=item,
+            similar=similar,
+            others=others,
+            sources_by_category=sources_by_category,
+        )
+    )
 
 
 @app.post("/api/digest/{digest_date}/rebuild-pdf")
@@ -338,14 +355,14 @@ async def rebuild_digest_pdf(
     """Rebuild PDF for a digest."""
     try:
         from digest import pdf, r2
-        
+
         digest_obj_date = datetime.fromisoformat(digest_date).date()
-        
+
         with db.connect() as conn:
             digest = db.get_digest(conn, digest_obj_date)
             if not digest:
                 return {"status": "error", "message": "Digest not found"}
-            
+
             # Get items
             digest_item_rows = db.digest_items(conn, digest["id"])
             items = []
@@ -353,21 +370,23 @@ async def rebuild_digest_pdf(
                 item = db.get_item(conn, row["id"])
                 if item:
                     items.append(item)
-            
+
             # Generate PDF
             pdf_bytes = await pdf.render_bytes(digest_obj_date, items)
-            pdf_url = r2.upload(pdf_bytes, f"digests/{digest_obj_date}.pdf")
-            
+            pdf_path = r2.upload(pdf_bytes, f"digests/{digest_obj_date}.pdf")
+
             # Update digest
             conn.execute(
-                "UPDATE digests SET pdf_url = %s WHERE id = %s",
-                (pdf_url, digest["id"])
+                "UPDATE digests SET pdf_path = %s WHERE id = %s",
+                (pdf_path, digest["id"]),
             )
             conn.commit()
-        
-        return {"status": "ok", "pdf_url": pdf_url}
+
+        return {"status": "ok", "pdf_path": pdf_path}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
 async def star_item(
     item_id: str,
     current_user: dict = Depends(get_current_user),
@@ -378,14 +397,14 @@ async def star_item(
             item = db.get_item(conn, int(item_id))
             if not item:
                 raise HTTPException(status_code=404, detail="Item not found")
-            
+
             new_state = not item.get("starred", False)
             db.set_starred(conn, int(item_id), new_state)
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
     return {"starred": new_state}
 
 
@@ -397,12 +416,13 @@ async def health():
 if __name__ == "__main__":
     import uvicorn
     import sys
-    
+
     # Windows + asyncio subprocess fix for Playwright
     if sys.platform == "win32":
         import asyncio
+
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    
+
     port = int(os.getenv("PORT", "8000"))
     uvicorn.run(
         "main:app",

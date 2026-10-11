@@ -22,8 +22,8 @@
         <div class="flex justify-between items-center">
             <h2 class="text-2xl font-semibold text-white">Picks</h2>
             <div class="flex gap-2">
-                {% if today_digest.pdf_url %}
-                <a href="{{ today_digest.pdf_url }}" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700" download>
+                {% if today_digest.pdf_path %}
+                <a href="{{ today_digest.pdf_path }}" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700" download>
                     📥 Download PDF
                 </a>
                 {% endif %}
