@@ -138,6 +138,18 @@ def _do_login(email: str, password: str):
         st.error(f"Login failed: {e}")
 
 
+# --- Restore session from cookies on every page load ---
+if not st.session_state.get("user_id"):
+    try:
+        user_id = cookie_controller.get("user_id")
+        user_email = cookie_controller.get("user_email")
+        if user_id and user_email:
+            st.session_state["user_id"] = user_id
+            st.session_state["user_email"] = user_email
+    except Exception:
+        pass  # cookie restore failed
+
+
 if not st.session_state.get("user_id"):
     # Clear query params when redirecting to login
     st.query_params.clear()
@@ -302,13 +314,22 @@ if st.session_state.get("user_id"):
         ]
     }
     by_category: dict[str, list] = {}
-    for src in load_sources():
-        by_category.setdefault(src.get("category") or "other", []).append(_source_page(src))
+    try:
+        for src in load_sources():
+            by_category.setdefault(src.get("category") or "other", []).append(_source_page(src))
+    except Exception as e:
+        st.error(f"Failed to load sources: {e}")
+        st.exception(e)
+        by_category = {}
     for cat in [*CATEGORIES, "other"]:
         if cat in by_category:
             sections[CATEGORY_LABELS[cat]] = by_category[cat]
 
     _navbar()
     st.markdown("<style>.main { padding-bottom: 150px; }</style>", unsafe_allow_html=True)
-    st.navigation(sections).run()
+    try:
+        st.navigation(sections).run()
+    except Exception as e:
+        st.error(f"Page failed to load: {e}")
+        st.exception(e)
     _footer()
