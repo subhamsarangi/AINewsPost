@@ -119,7 +119,7 @@ Rules:
 - Quality over quantity. Return fewer than {n} (even 0) if the day is thin.
 - Prefer substance: new research, real engineering lessons, notable launches,
   insightful opinion, meaningful funding news. Skip fluff, hype, and rehashes.
-- Aim for variety across categories (research, mlops, community, funding)
+- Aim for variety across categories (research, mlops, news, community, funding)
   when quality allows. Do not force a category that has nothing good.
 - Do not pick two items about the same story.
 

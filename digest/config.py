@@ -16,7 +16,7 @@ OUTPUT_DIR = ROOT / "output"
 DIGEST_DIR = OUTPUT_DIR / "digests"
 SOURCES_FILE = ROOT / "sources.yaml"
 
-CATEGORIES = ["research", "mlops", "community", "funding"]
+CATEGORIES = ["research", "mlops", "news", "community", "funding"]
 SOURCE_TYPES = {"rss", "hn", "scrape"}
 
 load_dotenv(ROOT / ".env")
@@ -64,6 +64,14 @@ def _validate(src: dict, seen: set[str]) -> None:
         raise ValueError(f"{src['id']}: category must be one of {CATEGORIES}")
     if src["type"] in ("rss", "scrape") and "url" not in src:
         raise ValueError(f"{src['id']}: '{src['type']}' source needs a url")
+    if src["type"] == "scrape":
+        sel = src.get("selectors") or {}
+        if not sel.get("item") or not sel.get("title"):
+            raise ValueError(
+                f"{src['id']}: scrape source needs selectors.item and selectors.title"
+            )
+        if src.get("render", "http") not in ("http", "browser"):
+            raise ValueError(f"{src['id']}: render must be 'http' or 'browser'")
     seen.add(src["id"])
 
 

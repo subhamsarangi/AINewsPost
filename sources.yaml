@@ -61,7 +61,7 @@ sources:
   - id: the_batch
     name: The Batch (DeepLearning.AI)
     type: scrape
-    category: mlops
+    category: news
     url: https://www.deeplearning.ai/the-batch/
     default_sort: date
     selectors:
@@ -70,9 +70,15 @@ sources:
       title: "h2, h3"
       date: "a.badge"
 
-  - id: techgig
-    name: TechGig Newsletter
+  - id: techgig_et
+    name: TechGig ET Newsletter
     type: scrape
-    category: community
+    category: news
     url: https://techgig.com/etnewsletter.php
     default_sort: date
+    selectors:
+      item: 'td[style*="dashed"]'
+      link: a
+      title: a
+      link_param: url
+      date_param: dt

@@ -49,6 +49,7 @@ def _source_page(src: dict):
 CATEGORY_LABELS = {
     "research": "Research",
     "mlops": "MLOps",
+    "news": "News",
     "community": "Community",
     "funding": "Funding",
     "other": "Other",

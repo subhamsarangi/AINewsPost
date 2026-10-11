@@ -16,6 +16,8 @@ docker compose up -d
 
 uv run python -m digest run
 
+uv run python -m digest.pdf
+
 streamlit run ui/app.py --server.port 8599
 ```
 
@@ -82,7 +84,6 @@ uv run tmp_titles.py
 ### Perform Recluster
 docker exec -it ai-digest-db psql -U digest -d digest -c "update items set cluster_id=null"
 
-
 ### Check Search
 uv run python -c "from digest import db, search; c=db.connect(); [print(round(r['score'],4), r['source_id'], r['title'][:60]) for r in search.search(c,'agent evaluation')]; c.close()"
 
@@ -95,12 +96,14 @@ uv run python -c "from digest import db, rank; c=db.connect(); [print(p['id'], p
 ## Check Pipeline DRY RUN (no PDF, no summary)
 uv run python -c "from digest import pipeline; r=pipeline.run(dry_run=True); [print(p['id'], p['title'][:60], '|', p['reason']) for p in r['picks']]; print(r['note']); [print(s) for s in r['sources']]"
 
-## Check PDF generation (no LLM calls)
-uv run python -m digest.pdf
-
 ## Check Full Run Rebuild
 uv run python -m digest run --force       rebuild today's digest
 
 ## Check Partial Runs
 uv run python -m digest run --dry-run     picks only, no summaries, no PDF
 uv run python -m digest run --no-fetch    skip fetching
+
+## Check Scraping
+uv run python -c "from digest.config import get_source; from digest.ingest import scrape; [print(i['published_at'].date() if i['published_at'] else None, i['title'][:70], '|', i['url']) for s in ('the_batch','anthropic') for i in scrape.fetch(get_source(s))]" 
+
+uv run python -c "from digest.config import get_source; from digest.ingest import scrape; [print(i['published_at'].date(), i['title'][:60], '|', i['canonical_url']) for i in scrape.fetch(get_source('techgig_et'))]"
