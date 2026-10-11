@@ -6,12 +6,10 @@ a "Generate today's digest" button when today has none (same as `python -m diges
 """
 
 from datetime import date
-from pathlib import Path
 
 import streamlit as st
 
 from digest import db, llm
-from digest.config import ROOT
 import views
 from views import run_db
 
@@ -22,10 +20,17 @@ MAX_DIGESTS = 60
 # helpers
 # --------------------------------------------------------------------------
 @st.cache_data(show_spinner=False)
-def _read_pdf(
-    path: str, mtime: float
-) -> bytes:  # mtime in the key: cache refreshes on rebuild
-    return Path(path).read_bytes()
+def _fetch_pdf_from_r2(url: str) -> bytes:
+    """Fetch PDF from R2 URL (cached by URL)."""
+    import httpx
+    try:
+        return httpx.get(url, follow_redirects=True, timeout=30).raise_for_status().content
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 400:
+            raise RuntimeError(
+                "R2 bucket is private. Make it public in Cloudflare dashboard or set R2_PUBLIC_URL to a custom domain."
+            ) from e
+        raise
 
 
 def _friendly(exc: Exception) -> str | None:
@@ -99,7 +104,7 @@ def _generate_today() -> None:
 
 
 def _rebuild_pdf(d: dict) -> None:
-    from digest import pdf
+    from digest import pdf, r2
 
     with st.spinner("Rebuilding the PDF from the saved picks..."):
         try:
@@ -120,7 +125,12 @@ def _rebuild_pdf(d: dict) -> None:
                 return items
 
             items = run_db(build)
-            pdf.render(d["date"], items, ROOT / d["pdf_path"])
+            pdf_url = pdf.render(d["date"], items)
+            
+            # Update digest row with new R2 URL
+            with db.connect() as conn:
+                db.save_digest(conn, d["date"], pdf_url, [i["id"] for i in items])
+            
             _flash("success", f"PDF rebuilt for {d['date']:%b %d, %Y}.")
         except Exception as e:
             msg = _friendly(e)
@@ -184,19 +194,24 @@ def picks_page() -> None:
     ss["picks_sel"] = chosen
     d = next(x for x in digests if x["id"] == chosen)
 
-    path = ROOT / d["pdf_path"]
     left, mid, right = st.columns([5, 2, 2])
     left.subheader(f"{d['date']:%A, %B %d, %Y}")
-    if path.exists():
-        mid.download_button(
-            "Download PDF",
-            _read_pdf(str(path), path.stat().st_mtime),
-            file_name=path.name,
-            mime="application/pdf",
-            key=f"dl_{d['id']}",
-        )
+    
+    # d["pdf_path"] is now an R2 URL
+    if d["pdf_path"].startswith("https://"):
+        try:
+            pdf_bytes = _fetch_pdf_from_r2(d["pdf_path"])
+            mid.download_button(
+                "Download PDF",
+                pdf_bytes,
+                file_name=f"{d['date'].isoformat()}.pdf",
+                mime="application/pdf",
+                key=f"dl_{d['id']}",
+            )
+        except RuntimeError:
+            mid.caption("❌ PDF unavailable (bucket private)")
     else:
-        mid.caption("PDF file is missing.")
+        mid.caption("No PDF URL.")
     if right.button(
         "Rebuild PDF",
         key=f"rb_{d['id']}",

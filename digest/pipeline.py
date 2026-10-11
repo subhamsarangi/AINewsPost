@@ -249,18 +249,14 @@ def _run(
         log.info("[5/5] rendering PDF")
         from . import pdf  # imported late: heavy (Playwright)
 
-        DIGEST_DIR.mkdir(parents=True, exist_ok=True)
-        out = pdf.render(today, items, DIGEST_DIR / f"{today.isoformat()}.pdf")
-        rel = (
-            out.resolve().relative_to(ROOT).as_posix()
-        )  # stored relative: project can move
+        pdf_url = pdf.render(today, items)
         with db.connect() as conn:
-            db.save_digest(conn, today, rel, [i["id"] for i in items], owner_id=admin_id)
+            db.save_digest(conn, today, pdf_url, [i["id"] for i in items], owner_id=admin_id)
     except Exception:
         _restore(today, restore, admin_id)
         raise
-    result["pdf"] = rel
-    log.info("digest saved: %s", rel)
+    result["pdf"] = pdf_url
+    log.info("digest saved: %s", pdf_url)
     log.info(llm.usage_report())
     return result
 

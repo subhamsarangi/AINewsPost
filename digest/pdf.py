@@ -91,13 +91,22 @@ def render_html(digest_date: date, items: list[dict]) -> str:
 # --------------------------------------------------------------------------
 # PDF
 # --------------------------------------------------------------------------
-def render(digest_date: date, items: list[dict], out_path: Path) -> Path:
+def render_bytes(digest_date: date, items: list[dict]) -> bytes:
+    """Render digest to PDF bytes. No file I/O.
+
+    Args:
+        digest_date: Date of the digest
+        items: List of item dicts
+
+    Returns:
+        PDF file content as bytes
+
+    Raises:
+        RuntimeError: If Chromium not installed or rendering fails
+    """
     from playwright.sync_api import Error as PlaywrightError
     from playwright.sync_api import sync_playwright
 
-    out_path = Path(out_path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = out_path.with_name(out_path.name + ".tmp")  # never leave a half-written PDF
     html = render_html(digest_date, items)
 
     try:
@@ -106,8 +115,7 @@ def render(digest_date: date, items: list[dict], out_path: Path) -> Path:
             try:
                 page = browser.new_page()
                 page.set_content(html, wait_until="load")
-                page.pdf(
-                    path=str(tmp),
+                pdf_bytes = page.pdf(
                     format="A4",
                     print_background=True,
                     display_header_footer=True,
@@ -123,7 +131,6 @@ def render(digest_date: date, items: list[dict], out_path: Path) -> Path:
             finally:
                 browser.close()
     except PlaywrightError as e:
-        tmp.unlink(missing_ok=True)
         if "playwright install" in str(e) or "Executable doesn't exist" in str(e):
             raise RuntimeError(
                 "Chromium for PDF output is not installed. "
@@ -131,15 +138,32 @@ def render(digest_date: date, items: list[dict], out_path: Path) -> Path:
             ) from e
         raise
 
-    try:
-        os.replace(tmp, out_path)
-    except PermissionError as e:  # Windows: PDF is open in a viewer
-        tmp.unlink(missing_ok=True)
-        raise RuntimeError(
-            f"Cannot overwrite {out_path}: close it in your PDF viewer " "and rerun."
-        ) from e
-    log.info("PDF written: %s (%d items)", out_path, len(items))
-    return out_path
+    log.info("PDF rendered: %d items", len(items))
+    return pdf_bytes
+
+
+def render(digest_date: date, items: list[dict], out_path: Path | None = None) -> str:
+    """Render digest and upload to R2.
+
+    Args:
+        digest_date: Date of the digest (YYYY-MM-DD)
+        items: List of item dicts
+        out_path: Ignored (kept for backwards compatibility); PDFs go to R2 only
+
+    Returns:
+        Public R2 URL of the uploaded PDF
+
+    Raises:
+        RuntimeError: If rendering fails
+        r2.R2Error: If upload fails or credentials missing
+    """
+    from . import r2
+
+    pdf_bytes = render_bytes(digest_date, items)
+    date_str = digest_date.strftime("%Y-%m-%d")
+    url = r2.upload(pdf_bytes, date_str)
+    log.info("PDF uploaded to R2: %s", url)
+    return url
 
 
 # --------------------------------------------------------------------------
@@ -161,7 +185,12 @@ def _preview(n: int = 3) -> Path:
                 if m["id"] != full["id"]
             ]
             items.append(full)
-    return render(date.today(), items, OUTPUT_DIR / "preview.pdf")
+    
+    pdf_bytes = render_bytes(date.today(), items)
+    out_path = OUTPUT_DIR / "preview.pdf"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_bytes(pdf_bytes)
+    return out_path
 
 
 if __name__ == "__main__":

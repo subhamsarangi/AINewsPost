@@ -19,6 +19,7 @@ dependencies = [
     "streamlit-scroll-to-top>=0.0.4",
     "streamlit-cookies-controller>=0.0.4",
     "streamlit-lottie>=0.0.5",
+    "boto3>=1.28",        # Cloudflare R2 uploads
 ]
 
 [dependency-groups]
