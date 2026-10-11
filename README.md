@@ -14,16 +14,8 @@ uv run playwright install chromium
 
 docker compose up -d
 
-uv run python -m digest run
+uv run pytest -q
 
-uv run python -m digest.pdf
-
-streamlit run ui/app.py --server.port 8599
-```
-
-- later use the run script.
-
-```sh
 uv run runner.py
 ```
 
@@ -96,12 +88,18 @@ uv run python -c "from digest import db, rank; c=db.connect(); [print(p['id'], p
 ## Check Pipeline DRY RUN (no PDF, no summary)
 uv run python -c "from digest import pipeline; r=pipeline.run(dry_run=True); [print(p['id'], p['title'][:60], '|', p['reason']) for p in r['picks']]; print(r['note']); [print(s) for s in r['sources']]"
 
+## Check Full Run
+uv run python -m digest run
+
 ## Check Full Run Rebuild
 uv run python -m digest run --force       rebuild today's digest
 
 ## Check Partial Runs
 uv run python -m digest run --dry-run     picks only, no summaries, no PDF
 uv run python -m digest run --no-fetch    skip fetching
+
+## Check PDF generation
+uv run python -m digest.pdf
 
 ## Check Scraping
 uv run python -c "from digest.config import get_source; from digest.ingest import scrape; [print(i['published_at'].date() if i['published_at'] else None, i['title'][:70], '|', i['url']) for s in ('the_batch','anthropic') for i in scrape.fetch(get_source(s))]" 

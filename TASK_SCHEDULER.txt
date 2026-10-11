@@ -1,0 +1,16 @@
+Windows Task Scheduler (daily run, once):
+  1. Win+R -> taskschd.msc -> Create Basic Task
+  2. Name: ai-digest daily. Trigger: Daily, 07:00.
+  3. Action: Start a program
+       Program/script:  D:\SCRIPTS\ainewspost\.venv\Scripts\python.exe
+       Add arguments:   -m digest run
+       Start in:        D:\SCRIPTS\ainewspost
+  4. Finish. Open Properties: tick "Run whether user is logged on or not"
+     (or leave logged-in only if the PC is on at 07:00 and you are logged in).
+  5. Test: right-click the task -> Run. Check output\digests\ for today's PDF.
+Notes:
+  - If the PC is off at 07:00: tick "Run task as soon as possible after a scheduled start is missed".
+  - Logs: the run prints to the console. To keep them, change Add arguments to:
+      -m digest run >> output\run.log 2>&1
+  - Missed days are caught up automatically by the next run (fetch uses last-fetch time).
+  - Same-day rerun does nothing unless --force.

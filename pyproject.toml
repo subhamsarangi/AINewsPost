@@ -17,3 +17,8 @@ dependencies = [
     "playwright>=1.47",   # PDF rendering (no GTK needed on Windows)
     "streamlit>=1.40",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
