@@ -26,11 +26,15 @@ def main():
         print("Passwords don't match.")
         return 1
     
+    is_admin_input = input("Make this user admin? (y/n, default: y): ").strip().lower()
+    is_admin = is_admin_input != 'n'  # default true
+    
     try:
         with db.connect() as conn:
-            user_id = auth.create_user(conn, email, password)
+            user_id = auth.create_user(conn, email, password, is_admin=is_admin)
             conn.commit()
-        print(f"✓ User created: {email} (id: {user_id})")
+        admin_label = " (admin)" if is_admin else ""
+        print(f"✓ User created: {email} (id: {user_id}){admin_label}")
         return 0
     except auth.AuthError as e:
         print(f"✗ {e}")

@@ -4,8 +4,11 @@ CREATE TABLE users (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email         TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
+    is_admin      BOOLEAN NOT NULL DEFAULT false,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE UNIQUE INDEX users_admin_idx ON users (is_admin) WHERE is_admin = true;
 
 CREATE TABLE sources (
     id            TEXT PRIMARY KEY,
@@ -52,10 +55,9 @@ CREATE INDEX items_owner_idx     ON items (owner);
 CREATE TABLE digests (
     id         BIGSERIAL PRIMARY KEY,
     owner      UUID REFERENCES users(id) ON DELETE CASCADE,
-    date       DATE NOT NULL,
+    date       DATE NOT NULL UNIQUE,
     pdf_path   TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(owner, date)
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE digest_items (

@@ -163,6 +163,22 @@ def check() -> None:
             )
 
 
+def get_admin_user(conn) -> str | None:
+    """Get the admin user ID, or None if no admin exists."""
+    row = conn.execute("SELECT id FROM users WHERE is_admin = true").fetchone()
+    return str(row["id"]) if row else None
+
+
+def ensure_admin_user(conn) -> str:
+    """Get admin user ID. Raise DatabaseProblem if no admin exists."""
+    admin_id = get_admin_user(conn)
+    if not admin_id:
+        raise DatabaseProblem(
+            "No admin user found. Create one first: uv run python setup_user.py"
+        )
+    return admin_id
+
+
 def _vec(v) -> np.ndarray:
     return np.asarray(v, dtype=np.float32)
 
@@ -177,16 +193,16 @@ def _np(v) -> np.ndarray | None:
 # --------------------------------------------------------------------------
 # Sources
 # --------------------------------------------------------------------------
-def sync_sources(conn, sources: list[dict]) -> None:
+def sync_sources(conn, sources: list[dict], owner_id: str | None = None) -> None:
     """Mirror sources.yaml into the sources table (yaml stays the truth)."""
     for s in sources:
         conn.execute(
-            """INSERT INTO sources (id, name, type, category)
-               VALUES (%(id)s, %(name)s, %(type)s, %(category)s)
+            """INSERT INTO sources (id, name, type, category, owner)
+               VALUES (%s, %s, %s, %s, %s)
                ON CONFLICT (id) DO UPDATE
                SET name = EXCLUDED.name, type = EXCLUDED.type,
                    category = EXCLUDED.category""",
-            s,
+            (s["id"], s["name"], s["type"], s.get("category"), owner_id),
         )
 
 
@@ -222,7 +238,7 @@ def source_health(conn) -> list[Row]:
 # --------------------------------------------------------------------------
 # Items: write path
 # --------------------------------------------------------------------------
-def insert_item(conn, item: dict) -> int | None:
+def insert_item(conn, item: dict, owner_id: str | None = None) -> int | None:
     """Insert a new item. Returns its id, or None if canonical_url exists."""
     params = {
         "published_at": None,
@@ -230,14 +246,15 @@ def insert_item(conn, item: dict) -> int | None:
         "points": None,
         "num_comments": None,
         "hn_url": None,
+        "owner": owner_id,
         **item,
     }
     row = conn.execute(
         """INSERT INTO items (source_id, url, canonical_url, title, published_at,
-                              content, points, num_comments, hn_url)
+                              content, points, num_comments, hn_url, owner)
            VALUES (%(source_id)s, %(url)s, %(canonical_url)s, %(title)s,
                    %(published_at)s, %(content)s, %(points)s,
-                   %(num_comments)s, %(hn_url)s)
+                   %(num_comments)s, %(hn_url)s, %(owner)s)
            ON CONFLICT (canonical_url) DO NOTHING
            RETURNING id""",
         params,
@@ -517,13 +534,13 @@ def hybrid_search(
 # --------------------------------------------------------------------------
 # Digests
 # --------------------------------------------------------------------------
-def save_digest(conn, digest_date: date, pdf_path: str, item_ids: list[int]) -> int:
+def save_digest(conn, digest_date: date, pdf_path: str, item_ids: list[int], owner_id: str | None = None) -> int:
     """Create (or replace) the digest for a date and its ranked items."""
     row = conn.execute(
-        """INSERT INTO digests (date, pdf_path) VALUES (%s, %s)
+        """INSERT INTO digests (date, pdf_path, owner) VALUES (%s, %s, %s)
            ON CONFLICT (date) DO UPDATE SET pdf_path = EXCLUDED.pdf_path
            RETURNING id""",
-        (digest_date, pdf_path),
+        (digest_date, pdf_path, owner_id),
     ).fetchone()
     digest_id = row["id"]
     conn.execute("DELETE FROM digest_items WHERE digest_id = %s", (digest_id,))

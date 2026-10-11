@@ -52,7 +52,7 @@ def _fetcher(source: dict):
 # --------------------------------------------------------------------------
 # Stage: ingest (one source failing never stops the others)
 # --------------------------------------------------------------------------
-def _ingest_source(source: dict) -> dict:
+def _ingest_source(source: dict, admin_id: str) -> dict:
     sid = source["id"]
     fetch = _fetcher(source)
     if fetch is None:
@@ -76,7 +76,7 @@ def _ingest_source(source: dict) -> dict:
     new = 0
     with db.connect() as conn:
         for item in items:
-            if db.insert_item(conn, item) is not None:
+            if db.insert_item(conn, item, owner_id=admin_id) is not None:
                 new += 1
             elif item.get("points") is not None:  # known HN story: refresh counts
                 db.update_hn_stats(
@@ -190,7 +190,8 @@ def _run(
     }
 
     with db.connect() as conn:
-        db.sync_sources(conn, load_sources(include_todo=True))
+        admin_id = db.ensure_admin_user(conn)
+        db.sync_sources(conn, load_sources(include_todo=True), owner_id=admin_id)
         existing = db.get_digest(conn, today)
     if existing and not dry_run and not force:
         result.update(
@@ -204,7 +205,7 @@ def _run(
     else:
         sources = load_sources()
         log.info("[1/5] fetching %d sources", len(sources))
-        result["sources"] = [_ingest_source(s) for s in sources]
+        result["sources"] = [_ingest_source(s, admin_id) for s in sources]
     log.info("[2/5] extracting page text, embedding, clustering")
     _process_new_items()
     log.info("[3/5] ranking candidates")
@@ -229,7 +230,7 @@ def _run(
             ]
         log.info("  picked %d item(s)", len(picks))
         if not picks:
-            _restore(today, restore)
+            _restore(today, restore, admin_id)
             result["note"] = "nothing worth reading: no digest written"
             log.info(result["note"])
             return result
@@ -254,9 +255,9 @@ def _run(
             out.resolve().relative_to(ROOT).as_posix()
         )  # stored relative: project can move
         with db.connect() as conn:
-            db.save_digest(conn, today, rel, [i["id"] for i in items])
+            db.save_digest(conn, today, rel, [i["id"] for i in items], owner_id=admin_id)
     except Exception:
-        _restore(today, restore)
+        _restore(today, restore, admin_id)
         raise
     result["pdf"] = rel
     log.info("digest saved: %s", rel)
@@ -264,13 +265,13 @@ def _run(
     return result
 
 
-def _restore(today: date, restore: tuple[str, list[int]] | None) -> None:
+def _restore(today: date, restore: tuple[str, list[int]] | None, admin_id: str | None = None) -> None:
     """A failed --force rerun must not destroy the digest that already existed."""
     if not restore:
         return
     try:
         with db.connect() as conn:
-            db.save_digest(conn, today, restore[0], restore[1])
+            db.save_digest(conn, today, restore[0], restore[1], owner_id=admin_id)
     except (db.DatabaseProblem, *db.CONNECTION_ERRORS):
         log.error(
             "could not restore today's digest row (database down). The PDF is "

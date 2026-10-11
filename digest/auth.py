@@ -40,13 +40,13 @@ def login(conn, email: str, password: str) -> str:
     return str(user_id)
 
 
-def create_user(conn, email: str, password: str) -> str:
-    """Create a new user. Return user_id. Raise AuthError if email exists."""
+def create_user(conn, email: str, password: str, is_admin: bool = False) -> str:
+    """Create a new user. Return user_id. Raise AuthError if email exists or admin exists."""
     try:
         hashed = hash_password(password)
         row = conn.execute(
-            "INSERT INTO users (email, password_hash) VALUES (%s, %s) RETURNING id",
-            (email, hashed),
+            "INSERT INTO users (email, password_hash, is_admin) VALUES (%s, %s, %s) RETURNING id",
+            (email, hashed, is_admin),
         ).fetchone()
         if not row:
             raise AuthError("Failed to create user.")
@@ -54,7 +54,10 @@ def create_user(conn, email: str, password: str) -> str:
     except db.CONNECTION_ERRORS:
         raise
     except Exception as e:
-        if "duplicate" in str(e).lower() or "unique" in str(e).lower():
+        err_str = str(e).lower()
+        if "duplicate" in err_str or "unique" in err_str:
+            if "is_admin" in str(e):
+                raise AuthError("Admin user already exists.")
             raise AuthError("Email already in use.")
         raise
 
