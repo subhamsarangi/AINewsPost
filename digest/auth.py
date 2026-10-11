@@ -33,7 +33,8 @@ def login(conn, email: str, password: str) -> str:
     ).fetchone()
     if not row:
         raise AuthError("Email not found.")
-    user_id, hashed = row["id"], row["password_hash"]
+    user_id = row["id"]
+    hashed = row["password_hash"]
     if not verify_password(password, hashed):
         raise AuthError("Wrong password.")
     return str(user_id)

@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT))  # so `import digest` works under streamlit
 
 import streamlit as st  # noqa: E402
 
-st.set_page_config(page_title="AI Digest", page_icon="📰", layout="wide")
+st.set_page_config(page_title="AI Digest", page_icon="🗞️", layout="wide")
 
 import digests  # noqa: E402  (ui/digests.py)
 import views  # noqa: E402  (ui/views.py)
@@ -24,33 +24,82 @@ from digest.config import CATEGORIES, load_sources  # noqa: E402
 # --- Login guard ---
 def _show_login():
     """Show login form instead of app."""
-    st.title("📰 AINewsPost Login")
+    st.markdown(
+        """
+        <style>
+        [data-testid="stForm"] {
+            max-width: 400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        .login-container {
+            max-width: 400px;
+            margin: 5rem auto 0 auto;
+            padding: 2rem;
+        }
+        .stButton button[kind="primary"] {
+            transition: opacity 0.2s;
+        }
+        .stButton button[kind="primary"]:active {
+            opacity: 0.5;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     
-    email = st.text_input("Email", placeholder="your@email.com", key="login_email")
-    password = st.text_input("Password", type="password", key="login_password")
+    st.markdown('<div class="login-container">', unsafe_allow_html=True)
+    st.markdown('<h1><i class="fas fa-newspaper"></i> AINewsPost</h1>', unsafe_allow_html=True)
+    st.markdown("---")
     
-    if st.button("Login", type="primary"):
-        if not email or not password:
-            st.error("Please enter email and password.")
-            return
+    with st.form("login_form", clear_on_submit=False):
+        email = st.text_input("Email", placeholder="your@email.com")
+        password = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Login", use_container_width=True, type="primary")
         
-        try:
-            with db.connect() as conn:
-                user_id = auth.login(conn, email, password)
-            st.session_state["user_id"] = user_id
-            st.session_state["user_email"] = email
-            st.success("Logged in!")
-            st.rerun()
-        except auth.AuthError as e:
-            st.error(str(e))
-        except db.DatabaseProblem as e:
-            st.error(str(e))
-        except Exception as e:
-            st.error(f"Login failed: {e}")
-    return
+        if submitted:
+            if not email or not password:
+                st.error("Enter email and password.")
+            else:
+                # Show spinner during login
+                placeholder = st.empty()
+                with placeholder.container():
+                    st.info("Logging in...")
+                _do_login(email, password)
+                placeholder.empty()
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def _do_login(email: str, password: str):
+    """Execute login."""
+    try:
+        with db.connect() as conn:
+            user_id = auth.login(conn, email, password)
+        st.session_state["user_id"] = user_id
+        st.session_state["user_email"] = email
+        st.success("Logged in!")
+        st.rerun()
+    except auth.AuthError as e:
+        st.error(str(e))
+    except db.DatabaseProblem as e:
+        st.error(str(e))
+    except Exception as e:
+        st.error(f"Login failed: {e}")
 
 
 if not st.session_state.get("user_id"):
+    # Hide sidebar when not logged in
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebar"] {
+            display: none;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     _show_login()
     st.stop()
 
@@ -62,21 +111,72 @@ def _navbar():
     if st.session_state.get("_last_page") != current_page:
         st.session_state["_last_page"] = current_page
     
-    col1, col2, col3 = st.columns([0.7, 0.2, 0.1])
-    col1.markdown("### 📰 AINewsPost")
-    col2.caption(f"👤 {st.session_state.get('user_email', 'User')}")
-    if col3.button("🚪", help="Logout", key="navbar_logout"):
-        st.session_state.clear()
-        st.rerun()
+    # FontAwesome icons
+    st.markdown(
+        f"""
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+        .navbar {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 0;
+            border-bottom: 1px solid #e0e0e0;
+            margin-bottom: 1rem;
+        }}
+        .navbar-title {{
+            font-size: 1.5rem;
+            font-weight: 600;
+        }}
+        .navbar-user {{
+            color: #666;
+            font-size: 0.9rem;
+        }}
+        </style>
+        <div class="navbar">
+            <div class="navbar-title"><i class="fas fa-newspaper"></i> AINewsPost</div>
+            <div class="navbar-user"><i class="fas fa-user"></i> {st.session_state.get('user_email', 'User')}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    
+    # Logout button
+    col1, col2 = st.columns([5, 1])
+    with col2:
+        if st.button("Logout", key="navbar_logout", use_container_width=True):
+            st.session_state.clear()
+            st.rerun()
 
 
 def _footer():
-    """Simple footer with copyright and link."""
-    st.divider()
-    col1, col2 = st.columns(2)
-    col1.caption("© 2026 AINewsPost")
-    col2.caption(
-        "[Developer](https://github.com/subhamsarangi) · Built with ❤️"
+    """Simple footer with copyright and link. Sticky to bottom."""
+    st.markdown(
+        """
+        <style>
+        [data-testid="stBottomBlockContainer"] {
+            padding-bottom: 0;
+        }
+        .footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: white;
+            border-top: 1px solid #e0e0e0;
+            padding: 1rem;
+            text-align: center;
+            font-size: 0.85rem;
+            color: #666;
+            z-index: 999;
+        }
+        </style>
+        <div class="footer">
+            © 2026 AINewsPost · 
+            <a href="https://github.com/subhamsarangi" style="color: #666; text-decoration: none;">Developer</a> · Built with <i class="fas fa-heart" style="color: #e74c3c;"></i>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
 # Fail with a readable message (not a stack trace) if the database is not usable.
@@ -93,7 +193,7 @@ if not st.session_state.get("db_ok"):
 def _picks_link() -> None:
     """Shown at the top of the home page."""
     st.page_link(
-        PICKS_PAGE, label="Daily picks: today's top items, past days, PDF", icon="📰"
+        PICKS_PAGE, label="Daily picks: today's top items, past days, PDF", icon="📄"
     )
     latest = views.run_db(db.list_digests, 1)
     if latest:
@@ -129,23 +229,26 @@ CATEGORY_LABELS = {
 }
 
 PICKS_PAGE = st.Page(
-    digests.picks_page, title="Daily picks", url_path="picks", icon="📰"
+    digests.picks_page, title="Daily picks", url_path="picks", icon="📄"
 )
 
-sections: dict[str, list] = {
-    "Overview": [
-        st.Page(_all_page, title="All items", url_path="all", default=True),
-        PICKS_PAGE,
-        st.Page(_starred_page, title="Starred", url_path="starred"),
-    ]
-}
-by_category: dict[str, list] = {}
-for src in load_sources():
-    by_category.setdefault(src.get("category") or "other", []).append(_source_page(src))
-for cat in [*CATEGORIES, "other"]:
-    if cat in by_category:
-        sections[CATEGORY_LABELS[cat]] = by_category[cat]
+# Only build navigation if logged in
+if st.session_state.get("user_id"):
+    sections: dict[str, list] = {
+        "Overview": [
+            st.Page(_all_page, title="All items", url_path="all", default=True),
+            PICKS_PAGE,
+            st.Page(_starred_page, title="Starred", url_path="starred"),
+        ]
+    }
+    by_category: dict[str, list] = {}
+    for src in load_sources():
+        by_category.setdefault(src.get("category") or "other", []).append(_source_page(src))
+    for cat in [*CATEGORIES, "other"]:
+        if cat in by_category:
+            sections[CATEGORY_LABELS[cat]] = by_category[cat]
 
-_navbar()
-st.navigation(sections).run()
-_footer()
+    _navbar()
+    st.markdown("<style>.main { padding-bottom: 150px; }</style>", unsafe_allow_html=True)
+    st.navigation(sections).run()
+    _footer()

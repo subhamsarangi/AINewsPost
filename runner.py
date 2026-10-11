@@ -11,4 +11,4 @@ if not is_db_ready():
     while not is_db_ready():
         time.sleep(2)
 
-subprocess.run(["streamlit", "run", "ui/app.py", "--server.port", "8599"])
+subprocess.run(["streamlit", "run", "ui/app.py", "--server.headless", "true", "--server.port", "8599"])
