@@ -39,12 +39,15 @@ if not st.session_state.get("auth_checked"):
         except:
             st.spinner("Loading...")
     
-    # Restore session from cookie
-    user_id = cookie_controller.get("user_id")
-    user_email = cookie_controller.get("user_email")
-    if user_id and user_email:
-        st.session_state["user_id"] = user_id
-        st.session_state["user_email"] = user_email
+    # Restore session from cookie (non-critical)
+    try:
+        user_id = cookie_controller.get("user_id")
+        user_email = cookie_controller.get("user_email")
+        if user_id and user_email:
+            st.session_state["user_id"] = user_id
+            st.session_state["user_email"] = user_email
+    except Exception:
+        pass  # cookie restore failed; user will log in again
     
     st.session_state["auth_checked"] = True
     st.rerun()
@@ -115,11 +118,15 @@ def _do_login(email: str, password: str):
     try:
         with db.connect() as conn:
             user_id = auth.login(conn, email, password)
-        # Store in both session and cookie
+        # Store in session state
         st.session_state["user_id"] = user_id
         st.session_state["user_email"] = email
-        cookie_controller.set("user_id", user_id)
-        cookie_controller.set("user_email", email)
+        # Store in cookie (don't fail if cookie fails)
+        try:
+            cookie_controller.set("user_id", user_id)
+            cookie_controller.set("user_email", email)
+        except Exception:
+            pass  # cookie failure is non-critical
         st.success("Logged in!")
         time.sleep(0.5)
         st.rerun()
