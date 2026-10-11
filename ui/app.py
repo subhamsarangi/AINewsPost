@@ -177,7 +177,7 @@ if not st.session_state.get("user_id"):
                 except:
                     pass
                 st.success("Logged in!")
-                st.rerun()
+                # Don't rerun - just show success and let the next render show the app
             except (auth.AuthError, db.DatabaseProblem) as e:
                 st.error(str(e))
             except Exception as e:
