@@ -20,6 +20,10 @@ import requests  # noqa: E402
 
 st.set_page_config(page_title="AI Digest", page_icon="🗞️", layout="wide")
 
+# Disable caching to prevent state issues
+st.cache_data.clear()
+st.cache_resource.clear()
+
 import digests  # noqa: E402  (ui/digests.py)
 import views  # noqa: E402  (ui/views.py)
 from digest import db, auth  # noqa: E402
@@ -28,9 +32,14 @@ from digest.config import CATEGORIES, load_sources  # noqa: E402
 # Initialize cookies
 cookie_controller = CookieController()
 
-# Restore session from cookie on first load
-if not st.session_state.get("auth_checked"):
-    # Restore session from cookie (non-critical)
+# Initialize session state keys
+if "user_id" not in st.session_state:
+    st.session_state["user_id"] = None
+if "user_email" not in st.session_state:
+    st.session_state["user_email"] = None
+
+# Restore from cookies once
+if not st.session_state.get("user_id"):
     try:
         user_id = cookie_controller.get("user_id")
         user_email = cookie_controller.get("user_email")
@@ -38,10 +47,7 @@ if not st.session_state.get("auth_checked"):
             st.session_state["user_id"] = user_id
             st.session_state["user_email"] = user_email
     except Exception as e:
-        st.write(f"DEBUG: Cookie restore failed: {e}")
-        pass  # cookie restore failed; user will log in again
-    
-    st.session_state["auth_checked"] = True
+        pass  # Cookie restore failed, user must log in
 
 
 # --- Login guard ---
@@ -321,6 +327,5 @@ if st.session_state.get("user_id"):
         st.navigation(sections).run()
     except Exception as e:
         st.error(f"Page failed to load: {e}")
-        st.exception(e)
         st.exception(e)
     _footer()

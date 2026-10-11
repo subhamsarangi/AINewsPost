@@ -223,7 +223,7 @@ def feed_view(
             b1, b2 = right.columns(2)
             if b1.button("Open", key=f"o_{page_key}_{r['slug']}"):
                 st.query_params["item"] = r["slug"]
-                st.rerun()
+                # Don't rerun - query_params change triggers auto-rerun
             if b2.button(
                 "★" if r["starred"] else "☆",
                 key=f"s_{page_key}_{r['id']}",
@@ -290,7 +290,7 @@ def item_detail(page_key: str, item_slug: str) -> None:
             col_a.write(f"{esc(s['title'])}  ({s['similarity']:.2f})")
             if col_b.button("Open", key=f"sim_{page_key}_{item['id']}_{s['id']}"):
                 st.query_params["item"] = s["slug"]
-                st.rerun()
+                # query_params change triggers auto-rerun
 
     st.subheader("Full text")
     if item["content"]:

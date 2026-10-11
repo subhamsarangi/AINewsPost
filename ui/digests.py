@@ -234,5 +234,5 @@ def picks_page() -> None:
                 body.caption("No summary saved for this item.")
             if btns.button("Details", key=f"pd_{d['id']}_{it['id']}"):
                 st.query_params["item"] = it["slug"]
-                st.rerun()
+                # query_params change triggers auto-rerun
             btns.link_button("Original", it["url"])
