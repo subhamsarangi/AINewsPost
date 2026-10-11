@@ -4,6 +4,7 @@ import re
 from datetime import datetime, timedelta, timezone
 
 import streamlit as st
+from streamlit_scroll_to_top import scroll_to_here
 
 from digest import db, search
 from digest.config import CATEGORIES, load_sources
@@ -35,16 +36,10 @@ def run_db(fn, *args, **kwargs):
 
 
 def scroll_to_top():
-    """Force scroll to top of page."""
-    st.markdown(
-        """
-        <script>
-            const mainDiv = document.querySelector('section.main');
-            if (mainDiv) mainDiv.scrollTop = 0;
-        </script>
-        """,
-        unsafe_allow_html=True,
-    )
+    """Scroll to top using the streamlit-scroll-to-top component."""
+    if st.session_state.get("_should_scroll_top"):
+        scroll_to_here(0, key=f"top_{st.session_state.get('_scroll_key', 0)}")
+        st.session_state["_should_scroll_top"] = False
 
 
 def esc(text: str | None) -> str:
@@ -116,26 +111,24 @@ def feed_view(
     """header_extra: optional callable that draws something under the title (list view only)."""
     ss = st.session_state
     
+    # Track item changes and trigger scroll
+    current_item = st.query_params.get("item")
+    last_item = ss.get(f"last_item_{page_key}")
+    if current_item != last_item:
+        ss[f"last_item_{page_key}"] = current_item
+        ss["_should_scroll_top"] = True
+        ss["_scroll_key"] = ss.get("_scroll_key", 0) + 1
+    
+    # Render scroll target if needed
+    scroll_to_top()
+    
     # Check if item slug is in query params
     if st.query_params.get("item"):
-        # Track if this is a new item (param changed)
-        current_item = st.query_params.get("item")
-        last_item = ss.get(f"last_item_{page_key}")
-        if current_item != last_item:
-            ss[f"last_item_{page_key}"] = current_item
-            scroll_to_top()
         return item_detail(page_key, st.query_params.get("item"))
     
     open_key = f"open_{page_key}"
     if ss.get(open_key):
         return item_detail(page_key, ss[open_key])
-    
-    # Back to list view - track that item was cleared
-    current_item = None
-    last_item = ss.get(f"last_item_{page_key}")
-    if last_item is not None:
-        ss[f"last_item_{page_key}"] = current_item
-        scroll_to_top()
 
     st.title(title)
     if header_extra:

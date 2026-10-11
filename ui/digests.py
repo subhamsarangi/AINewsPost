@@ -136,21 +136,19 @@ def _rebuild_pdf(d: dict) -> None:
 def picks_page() -> None:
     ss = st.session_state
     
-    if st.query_params.get("item"):
-        # Track if this is a new item (param changed)
-        current_item = st.query_params.get("item")
-        last_item = ss.get("last_item_picks")
-        if current_item != last_item:
-            ss["last_item_picks"] = current_item
-            views.scroll_to_top()
-        return views.item_detail("picks", st.query_params.get("item"))
-    
-    # Back to list view - track that item was cleared
-    current_item = None
+    # Track item changes and trigger scroll
+    current_item = st.query_params.get("item")
     last_item = ss.get("last_item_picks")
-    if last_item is not None:
+    if current_item != last_item:
         ss["last_item_picks"] = current_item
-        views.scroll_to_top()
+        ss["_should_scroll_top"] = True
+        ss["_scroll_key"] = ss.get("_scroll_key", 0) + 1
+    
+    # Render scroll target if needed
+    views.scroll_to_top()
+    
+    if st.query_params.get("item"):
+        return views.item_detail("picks", st.query_params.get("item"))
 
     st.title("Daily picks")
     _show_flash()
