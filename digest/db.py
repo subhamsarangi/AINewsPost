@@ -72,8 +72,9 @@ def explain(exc: Exception) -> str:
         )
     ):
         return (
-            f"Cannot reach Postgres at {target}. Start it with: docker compose up -d "
-            "(is Docker Desktop running?)"
+            f"Cannot reach Postgres at {target}. "
+            "Check SUPABASE_DATABASE_URL in Streamlit secrets (or .env locally). "
+            "Is the connection string correct?"
         )
     if any(
         k in text
