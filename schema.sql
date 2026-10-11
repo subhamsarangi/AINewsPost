@@ -9,7 +9,7 @@ CREATE TABLE users (
 
 CREATE TABLE sources (
     id            TEXT PRIMARY KEY,
-    owner         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    owner         UUID REFERENCES users(id) ON DELETE CASCADE,
     name          TEXT NOT NULL,
     type          TEXT NOT NULL,
     category      TEXT,
@@ -20,7 +20,7 @@ CREATE TABLE sources (
 
 CREATE TABLE items (
     id            BIGSERIAL PRIMARY KEY,
-    owner         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    owner         UUID REFERENCES users(id) ON DELETE CASCADE,
     source_id     TEXT NOT NULL REFERENCES sources(id),
     url           TEXT NOT NULL,
     canonical_url TEXT NOT NULL UNIQUE,
@@ -51,7 +51,7 @@ CREATE INDEX items_owner_idx     ON items (owner);
 
 CREATE TABLE digests (
     id         BIGSERIAL PRIMARY KEY,
-    owner      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    owner      UUID REFERENCES users(id) ON DELETE CASCADE,
     date       DATE NOT NULL,
     pdf_path   TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
