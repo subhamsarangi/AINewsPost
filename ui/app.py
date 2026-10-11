@@ -46,6 +46,14 @@ def _source_page(src: dict):
     return st.Page(page, title=src["name"], url_path=src["id"])
 
 
+CATEGORY_LABELS = {
+    "research": "Research",
+    "mlops": "MLOps",
+    "community": "Community",
+    "funding": "Funding",
+    "other": "Other",
+}
+
 sections: dict[str, list] = {
     "Overview": [
         st.Page(_all_page, title="All items", url_path="all", default=True),
@@ -58,6 +66,6 @@ for src in load_sources():
     by_category.setdefault(src.get("category") or "other", []).append(_source_page(src))
 for cat in [*CATEGORIES, "other"]:
     if cat in by_category:
-        sections[cat.capitalize()] = by_category[cat]
+        sections[CATEGORY_LABELS[cat]] = by_category[cat]
 
 st.navigation(sections).run()

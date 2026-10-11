@@ -43,6 +43,15 @@ def _date(d: datetime | None) -> str:
     return d.strftime("%b %d, %Y").replace(" 0", " ") if d else ""
 
 
+def _snippet(text: str | None, limit: int = 220) -> str:
+    """One readable paragraph from a summary or article start (bullets become ' • ')."""
+    text = re.sub(r"(^|\n)\s*[-*•]\s+", " • ", text or "")
+    text = " ".join(text.split()).lstrip("• ").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rsplit(" ", 1)[0] + "…"
+
+
 def _meta(r: dict) -> str:
     parts = [r.get("source_name"), r.get("category"), _date(r.get("published_at"))]
     if r.get("points") is not None:
@@ -53,16 +62,24 @@ def _meta(r: dict) -> str:
 
 
 def _health_caption(source_id: str) -> None:
+    """One status line per source page. A failing source must show its error even if
+    it has never succeeded (last_fetch_at only advances on success)."""
     row = next((h for h in run_db(db.source_health) if h["id"] == source_id), None)
-    if not row or not row["last_fetch_at"]:
+    status = (row or {}).get("last_status") or ""
+    last_ok = row["last_fetch_at"] if row else None
+    if status.startswith("error"):
+        ok_part = (
+            f" Last success {last_ok:%b %d, %H:%M}."
+            if last_ok
+            else " It has never succeeded."
+        )
+        st.warning(f"Last fetch failed: {status}.{ok_part}")
+    elif not last_ok:
         st.caption("Not fetched yet. Run: `uv run python -m digest run`")
-        return
-    status = row["last_status"] or ""
-    msg = (
-        f"Last fetch {row['last_fetch_at']:%b %d, %H:%M} · {status} · "
-        f"{row['total_items']} items saved"
-    )
-    (st.warning if status.startswith("error") else st.caption)(msg)
+    else:
+        st.caption(
+            f"Last fetch {last_ok:%b %d, %H:%M} · {status} · {row['total_items']} items saved"
+        )
 
 
 # --------------------------------------------------------------------------
@@ -163,7 +180,7 @@ def feed_view(
             left.markdown(f"**{esc(r['title'])}**")
             left.caption(_meta(r))
             if r.get("snippet"):
-                left.write(esc(" ".join(r["snippet"].split())[:220]))
+                left.write(esc(_snippet(r["snippet"])))
             b1, b2 = right.columns(2)
             if b1.button("Open", key=f"o_{page_key}_{r['id']}"):
                 ss[open_key] = r["id"]
@@ -209,7 +226,15 @@ def item_detail(page_key: str, item_id: int) -> None:
 
     st.subheader("Summary")
     if item["summary"]:
-        st.markdown(item["summary"])
+        # blank line first: markdown would otherwise glue this line onto the last bullet
+        st.markdown(
+            re.sub(
+                r"\n\s*Why it matters:",
+                "\n\n**Why it matters:**",
+                item["summary"],
+                flags=re.I,
+            )
+        )
     else:
         st.caption("No summary yet. Only items picked for a digest are summarized.")
 

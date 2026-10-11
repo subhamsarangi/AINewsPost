@@ -16,14 +16,20 @@ docker compose up -d
 
 uv run python -m digest run
 
-streamlit run ui/app.py --server.headless true --server.port 8599
+streamlit run ui/app.py --server.port 8599
+```
+
+- later use the run script.
+
+```sh
+uv run runner.py
 ```
 
 ---
 
 ## Other Commands
 
-### Check that the container is up and the schema was applied.
+### Check that the db container is up and the schema was applied.
 docker exec -it ai-digest-db psql -U digest -d digest -c "\dt"
 
 ### Check config file

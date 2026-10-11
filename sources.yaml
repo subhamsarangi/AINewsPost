@@ -11,20 +11,20 @@ sources:
     category: community
     default_sort: points
     min_points: 100
-    keywords: [ai, llm, gpt, openai, anthropic, claude, gemini, "machine learning", agent, rag, transformer]
-
-  - id: the_batch
-    name: The Batch (DeepLearning.AI)
-    type: scrape
-    category: mlops
-    url: https://www.deeplearning.ai/the-batch
-    default_sort: date
+    keywords: [ai, llm, gpt, openai, anthropic, claude, gemini, "machine learning", agent, agentic, harness, rag, transformer, "Platform engineering", "AI training"]
 
   - id: arize
     name: Arize Blog
     type: rss
     category: mlops
     url: https://arize.com/feed/
+    default_sort: date
+
+  - id: flexera
+    name: Flexera Blog
+    type: rss
+    category: mlops
+    url: https://www.flexera.com/blog/feed/
     default_sort: date
 
   - id: edith_yeung
@@ -41,19 +41,38 @@ sources:
     category: research
     url: https://openai.com/news/rss.xml
 
-  - id: anthropic
-    name: Anthropic Research
-    type: scrape
-    category: research
-    url: https://www.anthropic.com/research
-    selectors:            # CSS selectors for the listing page
-      item: "TODO"
-      link: "TODO"
-      title: "TODO"
-      date: "TODO"
-
   - id: deepmind
     name: Google DeepMind
     type: rss
     category: research
     url: https://deepmind.google/blog/feed/basic/
+
+  - id: anthropic
+    name: Anthropic Research
+    type: scrape
+    category: research
+    url: https://www.anthropic.com/research
+    selectors:
+      item: 'a[class*="PublicationList"][class*="listItem"]'
+      link: self
+      title: '[class*="title"]'
+      date: time
+
+  - id: the_batch
+    name: The Batch (DeepLearning.AI)
+    type: scrape
+    category: mlops
+    url: https://www.deeplearning.ai/the-batch/
+    default_sort: date
+    selectors:
+      item: "article.card"
+      link: 'a[href*="/the-batch/issue"]'
+      title: "h2, h3"
+      date: "a.badge"
+
+  - id: techgig
+    name: TechGig Newsletter
+    type: scrape
+    category: community
+    url: https://techgig.com/etnewsletter.php
+    default_sort: date
