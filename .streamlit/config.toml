@@ -2,7 +2,4 @@
 gatherUsageStats = false
 
 [client]
-toolbarMode = "viewer"      # hides the Deploy button
-
-[theme]
-base = "dark"
+toolbarMode = "viewer"

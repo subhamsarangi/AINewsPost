@@ -28,12 +28,8 @@ from digest.config import CATEGORIES, load_sources  # noqa: E402
 # Initialize cookies
 cookie_controller = CookieController()
 
-# Show loader while checking auth
+# Restore session from cookie on first load
 if not st.session_state.get("auth_checked"):
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:
-        st.write("Loading...")
-    
     # Restore session from cookie (non-critical)
     try:
         user_id = cookie_controller.get("user_id")
@@ -45,7 +41,6 @@ if not st.session_state.get("auth_checked"):
         pass  # cookie restore failed; user will log in again
     
     st.session_state["auth_checked"] = True
-    st.rerun()
 
 
 # --- Login guard ---
@@ -158,30 +153,7 @@ if not st.session_state.get("user_id"):
         """,
         unsafe_allow_html=True,
     )
-    
-    # Inline login form
-    st.title("AI Digest")
-    st.subheader("Login")
-    with st.form("login"):
-        email = st.text_input("Email")
-        password = st.text_input("Password", type="password")
-        if st.form_submit_button("Login"):
-            try:
-                with db.connect() as conn:
-                    uid = auth.login(conn, email, password)
-                st.session_state["user_id"] = uid
-                st.session_state["user_email"] = email
-                try:
-                    cookie_controller.set("user_id", uid)
-                    cookie_controller.set("user_email", email)
-                except:
-                    pass
-                st.success("Logged in!")
-                # Don't rerun - just show success and let the next render show the app
-            except (auth.AuthError, db.DatabaseProblem) as e:
-                st.error(str(e))
-            except Exception as e:
-                st.error(f"Login failed: {e}")
+    _show_login()
     st.stop()
 
 
@@ -348,5 +320,6 @@ if st.session_state.get("user_id"):
         st.navigation(sections).run()
     except Exception as e:
         st.error(f"Page failed to load: {e}")
+        st.exception(e)
         st.exception(e)
     _footer()
