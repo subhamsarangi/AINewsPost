@@ -39,7 +39,9 @@ def main():
         print(f"✗ Database error: {e}")
         return 1
     except Exception as e:
+        import traceback
         print(f"✗ Error: {e}")
+        traceback.print_exc()
         return 1
 
 

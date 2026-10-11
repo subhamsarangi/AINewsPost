@@ -33,7 +33,7 @@ def login(conn, email: str, password: str) -> str:
     ).fetchone()
     if not row:
         raise AuthError("Email not found.")
-    user_id, hashed = row
+    user_id, hashed = row["id"], row["password_hash"]
     if not verify_password(password, hashed):
         raise AuthError("Wrong password.")
     return str(user_id)
@@ -42,13 +42,18 @@ def login(conn, email: str, password: str) -> str:
 def create_user(conn, email: str, password: str) -> str:
     """Create a new user. Return user_id. Raise AuthError if email exists."""
     try:
+        hashed = hash_password(password)
         row = conn.execute(
             "INSERT INTO users (email, password_hash) VALUES (%s, %s) RETURNING id",
-            (email, hash_password(password)),
+            (email, hashed),
         ).fetchone()
-        return str(row[0])
+        if not row:
+            raise AuthError("Failed to create user.")
+        return str(row["id"])
+    except db.CONNECTION_ERRORS:
+        raise
     except Exception as e:
-        if "duplicate" in str(e).lower():
+        if "duplicate" in str(e).lower() or "unique" in str(e).lower():
             raise AuthError("Email already in use.")
         raise
 
@@ -60,4 +65,4 @@ def get_user(conn, user_id: str) -> Optional[dict]:
     ).fetchone()
     if not row:
         return None
-    return {"id": str(row[0]), "email": row[1], "created_at": row[2]}
+    return {"id": str(row["id"]), "email": row["email"], "created_at": row["created_at"]}

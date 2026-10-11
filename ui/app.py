@@ -20,9 +20,39 @@ import views  # noqa: E402  (ui/views.py)
 from digest import db, auth  # noqa: E402
 from digest.config import CATEGORIES, load_sources  # noqa: E402
 
-# Require login
+
+# --- Login guard ---
+def _show_login():
+    """Show login form instead of app."""
+    st.title("📰 AINewsPost Login")
+    
+    email = st.text_input("Email", placeholder="your@email.com", key="login_email")
+    password = st.text_input("Password", type="password", key="login_password")
+    
+    if st.button("Login", type="primary"):
+        if not email or not password:
+            st.error("Please enter email and password.")
+            return
+        
+        try:
+            with db.connect() as conn:
+                user_id = auth.login(conn, email, password)
+            st.session_state["user_id"] = user_id
+            st.session_state["user_email"] = email
+            st.success("Logged in!")
+            st.rerun()
+        except auth.AuthError as e:
+            st.error(str(e))
+        except db.DatabaseProblem as e:
+            st.error(str(e))
+        except Exception as e:
+            st.error(f"Login failed: {e}")
+    return
+
+
 if not st.session_state.get("user_id"):
-    st.switch_page("login.py")
+    _show_login()
+    st.stop()
 
 
 def _navbar():
@@ -37,7 +67,7 @@ def _navbar():
     col2.caption(f"👤 {st.session_state.get('user_email', 'User')}")
     if col3.button("🚪", help="Logout", key="navbar_logout"):
         st.session_state.clear()
-        st.switch_page("login.py")
+        st.rerun()
 
 
 def _footer():
