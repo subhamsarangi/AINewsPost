@@ -118,7 +118,7 @@ def _do_login(email: str, password: str):
     try:
         with db.connect() as conn:
             user_id = auth.login(conn, email, password)
-        # Store in session state
+        # Store in session state (this triggers auto-rerun)
         st.session_state["user_id"] = user_id
         st.session_state["user_email"] = email
         # Store in cookie (don't fail if cookie fails)
@@ -128,8 +128,7 @@ def _do_login(email: str, password: str):
         except Exception:
             pass  # cookie failure is non-critical
         st.success("Logged in!")
-        time.sleep(0.5)
-        st.rerun()
+        # Don't call st.rerun() - let Streamlit auto-rerun on state change
     except auth.AuthError as e:
         st.error(str(e))
     except db.DatabaseProblem as e:
