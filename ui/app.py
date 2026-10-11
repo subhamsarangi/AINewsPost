@@ -5,6 +5,7 @@ Pages: All items (home), Daily picks, Starred, then one page per source grouped 
 Adding a source to sources.yaml adds its page automatically.
 """
 
+import os
 import sys
 import time
 from pathlib import Path
@@ -229,13 +230,17 @@ def _footer():
 
 # Fail with a readable message (not a stack trace) if the database is not usable.
 if not st.session_state.get("db_ok"):
-    try:
-        db.check()
+    # On Streamlit Cloud, skip blocking DB check; let queries fail gracefully
+    if os.getenv("STREAMLIT_SERVER_HEADLESS"):
         st.session_state["db_ok"] = True
-    except db.DatabaseProblem as e:
-        st.error(str(e))
-        st.caption("Fix the problem above, then reload this page.")
-        st.stop()
+    else:
+        try:
+            db.check()
+            st.session_state["db_ok"] = True
+        except db.DatabaseProblem as e:
+            st.error(f"Database unavailable: {e}")
+            st.caption("Check your SUPABASE_DATABASE_URL, then reload.")
+            st.stop()
 
 
 def _picks_link() -> None:
