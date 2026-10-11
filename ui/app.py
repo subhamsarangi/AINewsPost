@@ -37,7 +37,8 @@ if not st.session_state.get("auth_checked"):
         if user_id and user_email:
             st.session_state["user_id"] = user_id
             st.session_state["user_email"] = user_email
-    except Exception:
+    except Exception as e:
+        st.write(f"DEBUG: Cookie restore failed: {e}")
         pass  # cookie restore failed; user will log in again
     
     st.session_state["auth_checked"] = True
