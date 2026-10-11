@@ -131,6 +131,8 @@ async def render_bytes(digest_date: date, items: list[dict]) -> bytes:
             finally:
                 await browser.close()
     except PlaywrightError as e:
+        import traceback
+        traceback.print_exc()
         if "playwright install" in str(e) or "Executable doesn't exist" in str(e):
             raise RuntimeError(
                 "Chromium for PDF output is not installed. "
