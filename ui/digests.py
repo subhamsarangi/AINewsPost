@@ -135,8 +135,8 @@ def _rebuild_pdf(d: dict) -> None:
 # --------------------------------------------------------------------------
 def picks_page() -> None:
     ss = st.session_state
-    if ss.get("open_picks"):
-        return views.item_detail("picks", ss["open_picks"])
+    if st.query_params.get("item"):
+        return views.item_detail("picks", st.query_params.get("item"))
 
     st.title("Daily picks")
     _show_flash()
@@ -206,6 +206,6 @@ def picks_page() -> None:
             else:
                 body.caption("No summary saved for this item.")
             if btns.button("Details", key=f"pd_{d['id']}_{it['id']}"):
-                ss["open_picks"] = it["id"]
+                st.query_params["item"] = it["slug"]
                 st.rerun()
             btns.link_button("Original", it["url"])

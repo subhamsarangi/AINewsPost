@@ -27,6 +27,7 @@ CREATE TABLE items (
     source_id     TEXT NOT NULL REFERENCES sources(id),
     url           TEXT NOT NULL,
     canonical_url TEXT NOT NULL UNIQUE,
+    slug          TEXT UNIQUE,
     title         TEXT,
     published_at  TIMESTAMPTZ,
     fetched_at    TIMESTAMPTZ NOT NULL DEFAULT now(),

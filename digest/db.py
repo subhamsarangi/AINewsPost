@@ -238,8 +238,28 @@ def source_health(conn) -> list[Row]:
 # --------------------------------------------------------------------------
 # Items: write path
 # --------------------------------------------------------------------------
+def _slugify(title: str) -> str:
+    """Convert title to URL-safe slug."""
+    import re
+    if not title:
+        return "untitled"
+    slug = re.sub(r"[^\w\s-]", "", title).lower()
+    slug = re.sub(r"[-\s]+", "-", slug).strip("-")
+    return slug[:50]
+
+
 def insert_item(conn, item: dict, owner_id: str | None = None) -> int | None:
     """Insert a new item. Returns its id, or None if canonical_url exists."""
+    title = item.get("title", "")
+    slug = _slugify(title)
+    
+    # Ensure unique slug
+    existing = conn.execute(
+        "SELECT COUNT(*) as cnt FROM items WHERE slug LIKE %s", (f"{slug}%",)
+    ).fetchone()
+    if existing["cnt"] > 0:
+        slug = f"{slug}-{existing['cnt']}"
+    
     params = {
         "published_at": None,
         "content": None,
@@ -247,14 +267,15 @@ def insert_item(conn, item: dict, owner_id: str | None = None) -> int | None:
         "num_comments": None,
         "hn_url": None,
         "owner": owner_id,
+        "slug": slug,
         **item,
     }
     row = conn.execute(
         """INSERT INTO items (source_id, url, canonical_url, title, published_at,
-                              content, points, num_comments, hn_url, owner)
+                              content, points, num_comments, hn_url, owner, slug)
            VALUES (%(source_id)s, %(url)s, %(canonical_url)s, %(title)s,
                    %(published_at)s, %(content)s, %(points)s,
-                   %(num_comments)s, %(hn_url)s, %(owner)s)
+                   %(num_comments)s, %(hn_url)s, %(owner)s, %(slug)s)
            ON CONFLICT (canonical_url) DO NOTHING
            RETURNING id""",
         params,
@@ -388,7 +409,7 @@ def rank_candidates(conn, since_hours: int = 36, limit: int = 80) -> list[Row]:
 
 def cluster_members(conn, cluster_id: int) -> list[Row]:
     return conn.execute(
-        """SELECT i.id, i.title, i.url, i.source_id, s.name AS source_name
+        """SELECT i.id, i.title, i.url, i.source_id, s.name AS source_name, i.slug
            FROM items i JOIN sources s ON s.id = i.source_id
            WHERE i.cluster_id = %s ORDER BY i.id""",
         (cluster_id,),
@@ -402,9 +423,19 @@ def get_item(conn, item_id: int) -> Row | None:
     return conn.execute(
         """SELECT i.id, i.source_id, s.name AS source_name, s.category, i.url,
                   i.title, i.published_at, i.fetched_at, i.content, i.summary,
-                  i.points, i.num_comments, i.hn_url, i.cluster_id, i.starred
+                  i.points, i.num_comments, i.hn_url, i.cluster_id, i.starred, i.slug
            FROM items i JOIN sources s ON s.id = i.source_id WHERE i.id = %s""",
         (item_id,),
+    ).fetchone()
+
+
+def get_item_by_slug(conn, slug: str) -> Row | None:
+    return conn.execute(
+        """SELECT i.id, i.source_id, s.name AS source_name, s.category, i.url,
+                  i.title, i.published_at, i.fetched_at, i.content, i.summary,
+                  i.points, i.num_comments, i.hn_url, i.cluster_id, i.starred, i.slug
+           FROM items i JOIN sources s ON s.id = i.source_id WHERE i.slug = %s""",
+        (slug,),
     ).fetchone()
 
 
@@ -417,7 +448,7 @@ def get_embedding(conn, item_id: int):
 
 def similar_items(conn, item_id: int, limit: int = 5) -> list[Row]:
     return conn.execute(
-        """SELECT b.id, b.title, b.source_id, 1 - (b.embedding <=> a.embedding) AS similarity
+        """SELECT b.id, b.title, b.source_id, b.slug, 1 - (b.embedding <=> a.embedding) AS similarity
            FROM items a JOIN items b ON b.id <> a.id
            WHERE a.id = %s AND a.embedding IS NOT NULL AND b.embedding IS NOT NULL
            ORDER BY b.embedding <=> a.embedding LIMIT %s""",
@@ -450,7 +481,7 @@ def _filter_sql(source_id, category, since, starred) -> tuple[str, dict]:
 
 
 _LIST_COLS = """i.id, i.source_id, s.name AS source_name, s.category, i.title,
-                i.url, i.published_at, i.points, i.num_comments, i.starred,
+                i.url, i.published_at, i.points, i.num_comments, i.starred, i.slug,
                 left(coalesce(i.summary, i.content, ''), 300) AS snippet"""
 
 

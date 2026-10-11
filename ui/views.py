@@ -102,6 +102,11 @@ def feed_view(
 ) -> None:
     """header_extra: optional callable that draws something under the title (list view only)."""
     ss = st.session_state
+    
+    # Check if item slug is in query params
+    if st.query_params.get("item"):
+        return item_detail(page_key, st.query_params.get("item"))
+    
     open_key = f"open_{page_key}"
     if ss.get(open_key):
         return item_detail(page_key, ss[open_key])
@@ -197,8 +202,8 @@ def feed_view(
             if r.get("snippet"):
                 left.write(esc(_snippet(r["snippet"])))
             b1, b2 = right.columns(2)
-            if b1.button("Open", key=f"o_{page_key}_{r['id']}"):
-                ss[open_key] = r["id"]
+            if b1.button("Open", key=f"o_{page_key}_{r['slug']}"):
+                st.query_params["item"] = r["slug"]
                 st.rerun()
             if b2.button(
                 "★" if r["starred"] else "☆",
@@ -216,13 +221,12 @@ def feed_view(
 # --------------------------------------------------------------------------
 # item detail
 # --------------------------------------------------------------------------
-def item_detail(page_key: str, item_id: int) -> None:
+def item_detail(page_key: str, item_slug: str) -> None:
     ss = st.session_state
-    open_key = f"open_{page_key}"
-    item = run_db(db.get_item, item_id)
+    item = run_db(db.get_item_by_slug, item_slug)
 
     if st.button("← Back to list", key=f"back_{page_key}"):
-        ss[open_key] = None
+        st.query_params.clear()
         st.rerun()
     if not item:
         st.warning("That item no longer exists.")
@@ -235,8 +239,8 @@ def item_detail(page_key: str, item_id: int) -> None:
     if item.get("hn_url"):
         c2.link_button("HN discussion", item["hn_url"])
     star_label = "★ Starred" if item["starred"] else "☆ Star"
-    if c3.button(star_label, key=f"dstar_{page_key}_{item_id}"):
-        run_db(db.set_starred, item_id, not item["starred"])
+    if c3.button(star_label, key=f"dstar_{page_key}_{item_slug}"):
+        run_db(db.set_starred, item["id"], not item["starred"])
         st.rerun()
 
     st.subheader("Summary")
@@ -249,7 +253,7 @@ def item_detail(page_key: str, item_id: int) -> None:
         [
             m
             for m in run_db(db.cluster_members, item["cluster_id"])
-            if m["id"] != item_id
+            if m["id"] != item["id"]
         ]
         if item["cluster_id"]
         else []
@@ -259,14 +263,14 @@ def item_detail(page_key: str, item_id: int) -> None:
         for m in others:
             st.markdown(f"{esc(m['source_name'])}: [{esc(m['title'])}]({m['url']})")
 
-    similar = run_db(db.similar_items, item_id, 5)
+    similar = run_db(db.similar_items, item["id"], 5)
     if similar:
         st.subheader("Similar items")
         for s in similar:
             col_a, col_b = st.columns([9, 1])
             col_a.write(f"{esc(s['title'])}  ({s['similarity']:.2f})")
-            if col_b.button("Open", key=f"sim_{page_key}_{item_id}_{s['id']}"):
-                ss[open_key] = s["id"]
+            if col_b.button("Open", key=f"sim_{page_key}_{item['id']}_{s['id']}"):
+                st.query_params["item"] = s["slug"]
                 st.rerun()
 
     st.subheader("Full text")
