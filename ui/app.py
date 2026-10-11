@@ -32,12 +32,7 @@ cookie_controller = CookieController()
 if not st.session_state.get("auth_checked"):
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
-        lottie_url = "https://lottie.host/dc9b44a5-6e48-4f73-a3d2-c7f43b0db4c8/Ljxe6e0xmW.json"
-        try:
-            lottie_json = requests.get(lottie_url).json()
-            st_lottie(lottie_json, speed=1, height=200)
-        except:
-            st.spinner("Loading...")
+        st.write("Loading...")
     
     # Restore session from cookie (non-critical)
     try:
