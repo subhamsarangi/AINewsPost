@@ -118,7 +118,7 @@ def _do_login(email: str, password: str):
     try:
         with db.connect() as conn:
             user_id = auth.login(conn, email, password)
-        # Store in session state (this triggers auto-rerun)
+        # Store in session state
         st.session_state["user_id"] = user_id
         st.session_state["user_email"] = email
         # Store in cookie (don't fail if cookie fails)
@@ -128,7 +128,7 @@ def _do_login(email: str, password: str):
         except Exception:
             pass  # cookie failure is non-critical
         st.success("Logged in!")
-        # Don't call st.rerun() - let Streamlit auto-rerun on state change
+        st.rerun()
     except auth.AuthError as e:
         st.error(str(e))
     except db.DatabaseProblem as e:
@@ -163,7 +163,30 @@ if not st.session_state.get("user_id"):
         """,
         unsafe_allow_html=True,
     )
-    _show_login()
+    
+    # Inline login form
+    st.title("AI Digest")
+    st.subheader("Login")
+    with st.form("login"):
+        email = st.text_input("Email")
+        password = st.text_input("Password", type="password")
+        if st.form_submit_button("Login"):
+            try:
+                with db.connect() as conn:
+                    uid = auth.login(conn, email, password)
+                st.session_state["user_id"] = uid
+                st.session_state["user_email"] = email
+                try:
+                    cookie_controller.set("user_id", uid)
+                    cookie_controller.set("user_email", email)
+                except:
+                    pass
+                st.success("Logged in!")
+                st.rerun()
+            except (auth.AuthError, db.DatabaseProblem) as e:
+                st.error(str(e))
+            except Exception as e:
+                st.error(f"Login failed: {e}")
     st.stop()
 
 
