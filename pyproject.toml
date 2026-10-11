@@ -16,6 +16,9 @@ dependencies = [
     "jinja2>=3.1",
     "playwright>=1.47",   # PDF rendering (no GTK needed on Windows)
     "streamlit>=1.40",
+    "streamlit-scroll-to-top>=0.0.4",
+    "streamlit-cookies-controller>=0.0.4",
+    "streamlit-lottie>=0.0.5",
 ]
 
 [dependency-groups]

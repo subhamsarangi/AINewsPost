@@ -6,12 +6,16 @@ Adding a source to sources.yaml adds its page automatically.
 """
 
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # so `import digest` works under streamlit
 
 import streamlit as st  # noqa: E402
+from streamlit_cookies_controller import CookieController  # noqa: E402
+from streamlit_lottie import st_lottie  # noqa: E402
+import requests  # noqa: E402
 
 st.set_page_config(page_title="AI Digest", page_icon="🗞️", layout="wide")
 
@@ -19,6 +23,30 @@ import digests  # noqa: E402  (ui/digests.py)
 import views  # noqa: E402  (ui/views.py)
 from digest import db, auth  # noqa: E402
 from digest.config import CATEGORIES, load_sources  # noqa: E402
+
+# Initialize cookies
+cookie_controller = CookieController()
+
+# Show loader while checking auth
+if not st.session_state.get("auth_checked"):
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        lottie_url = "https://lottie.host/dc9b44a5-6e48-4f73-a3d2-c7f43b0db4c8/Ljxe6e0xmW.json"
+        try:
+            lottie_json = requests.get(lottie_url).json()
+            st_lottie(lottie_json, speed=1, height=200)
+        except:
+            st.spinner("Loading...")
+    
+    # Restore session from cookie
+    user_id = cookie_controller.get("user_id")
+    user_email = cookie_controller.get("user_email")
+    if user_id and user_email:
+        st.session_state["user_id"] = user_id
+        st.session_state["user_email"] = user_email
+    
+    st.session_state["auth_checked"] = True
+    st.rerun()
 
 
 # --- Login guard ---
@@ -86,9 +114,13 @@ def _do_login(email: str, password: str):
     try:
         with db.connect() as conn:
             user_id = auth.login(conn, email, password)
+        # Store in both session and cookie
         st.session_state["user_id"] = user_id
         st.session_state["user_email"] = email
+        cookie_controller.set("user_id", user_id)
+        cookie_controller.set("user_email", email)
         st.success("Logged in!")
+        time.sleep(0.5)
         st.rerun()
     except auth.AuthError as e:
         st.error(str(e))
@@ -157,7 +189,11 @@ def _navbar():
     col1, col2 = st.columns([5, 1])
     with col2:
         if st.button("Logout", key="navbar_logout", use_container_width=True):
+            # Clear cookies
+            cookie_controller.set("user_id", "", max_age=0)
+            cookie_controller.set("user_email", "", max_age=0)
             st.session_state.clear()
+            time.sleep(0.5)
             st.rerun()
 
 
