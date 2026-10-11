@@ -34,6 +34,19 @@ def run_db(fn, *args, **kwargs):
         st.stop()
 
 
+def scroll_to_top():
+    """Force scroll to top of page."""
+    st.markdown(
+        """
+        <script>
+            const mainDiv = document.querySelector('section.main');
+            if (mainDiv) mainDiv.scrollTop = 0;
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def esc(text: str | None) -> str:
     """Escape markdown/latex/emoji-shortcode characters so scraped text renders literally."""
     return re.sub(r"([\\`*_{}\[\]()#+\-.!|<>~$:])", r"\\\1", text or "")
@@ -105,11 +118,24 @@ def feed_view(
     
     # Check if item slug is in query params
     if st.query_params.get("item"):
+        # Track if this is a new item (param changed)
+        current_item = st.query_params.get("item")
+        last_item = ss.get(f"last_item_{page_key}")
+        if current_item != last_item:
+            ss[f"last_item_{page_key}"] = current_item
+            scroll_to_top()
         return item_detail(page_key, st.query_params.get("item"))
     
     open_key = f"open_{page_key}"
     if ss.get(open_key):
         return item_detail(page_key, ss[open_key])
+    
+    # Back to list view - track that item was cleared
+    current_item = None
+    last_item = ss.get(f"last_item_{page_key}")
+    if last_item is not None:
+        ss[f"last_item_{page_key}"] = current_item
+        scroll_to_top()
 
     st.title(title)
     if header_extra:

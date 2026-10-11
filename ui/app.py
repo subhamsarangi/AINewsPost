@@ -33,9 +33,19 @@ def _show_login():
             padding: 2rem;
         }
         .login-container {
-            max-width: 400px;
-            margin: 5rem auto 0 auto;
-            padding: 2rem;
+            max-width: 500px;
+            margin: 2rem auto 0 auto;
+            padding: 3rem;
+        }
+        .login-title {
+            font-size: 3.5rem;
+            font-weight: 700;
+            margin: 0 0 0.5rem 0;
+        }
+        .login-subtitle {
+            font-size: 1.3rem;
+            color: #666;
+            margin: 0 0 2rem 0;
         }
         .stButton button[kind="primary"] {
             transition: opacity 0.2s;
@@ -49,8 +59,8 @@ def _show_login():
     )
     
     st.markdown('<div class="login-container">', unsafe_allow_html=True)
-    st.markdown('<h1><i class="fas fa-newspaper"></i> AINewsPost</h1>', unsafe_allow_html=True)
-    st.markdown("---")
+    st.markdown('<div class="login-title">AINewsPost</div>', unsafe_allow_html=True)
+    st.markdown('<div class="login-subtitle">Login</div>', unsafe_allow_html=True)
     
     with st.form("login_form", clear_on_submit=False):
         email = st.text_input("Email", placeholder="your@email.com")
@@ -89,6 +99,8 @@ def _do_login(email: str, password: str):
 
 
 if not st.session_state.get("user_id"):
+    # Clear query params when redirecting to login
+    st.query_params.clear()
     # Hide sidebar when not logged in
     st.markdown(
         """
