@@ -5,4 +5,4 @@ gatherUsageStats = false
 toolbarMode = "viewer"      # hides the Deploy button
 
 [theme]
-base = "light"
+base = "dark"
