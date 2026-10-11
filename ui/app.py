@@ -17,8 +17,37 @@ st.set_page_config(page_title="AI Digest", page_icon="📰", layout="wide")
 
 import digests  # noqa: E402  (ui/digests.py)
 import views  # noqa: E402  (ui/views.py)
-from digest import db  # noqa: E402
+from digest import db, auth  # noqa: E402
 from digest.config import CATEGORIES, load_sources  # noqa: E402
+
+# Require login
+if not st.session_state.get("user_id"):
+    st.switch_page("login.py")
+
+
+def _navbar():
+    """Simple navbar with AINewsPost title and logout."""
+    # Reset scroll when page changes
+    current_page = st.query_params.get("page", "all")
+    if st.session_state.get("_last_page") != current_page:
+        st.session_state["_last_page"] = current_page
+    
+    col1, col2, col3 = st.columns([0.7, 0.2, 0.1])
+    col1.markdown("### 📰 AINewsPost")
+    col2.caption(f"👤 {st.session_state.get('user_email', 'User')}")
+    if col3.button("🚪", help="Logout", key="navbar_logout"):
+        st.session_state.clear()
+        st.switch_page("login.py")
+
+
+def _footer():
+    """Simple footer with copyright and link."""
+    st.divider()
+    col1, col2 = st.columns(2)
+    col1.caption("© 2026 AINewsPost")
+    col2.caption(
+        "[Developer](https://github.com/subhamsarangi) · Built with ❤️"
+    )
 
 # Fail with a readable message (not a stack trace) if the database is not usable.
 if not st.session_state.get("db_ok"):
@@ -87,4 +116,6 @@ for cat in [*CATEGORIES, "other"]:
     if cat in by_category:
         sections[CATEGORY_LABELS[cat]] = by_category[cat]
 
+_navbar()
 st.navigation(sections).run()
+_footer()
