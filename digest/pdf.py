@@ -91,7 +91,7 @@ def render_html(digest_date: date, items: list[dict]) -> str:
 # --------------------------------------------------------------------------
 # PDF
 # --------------------------------------------------------------------------
-def render_bytes(digest_date: date, items: list[dict]) -> bytes:
+async def render_bytes(digest_date: date, items: list[dict]) -> bytes:
     """Render digest to PDF bytes. No file I/O.
 
     Args:
@@ -104,18 +104,18 @@ def render_bytes(digest_date: date, items: list[dict]) -> bytes:
     Raises:
         RuntimeError: If Chromium not installed or rendering fails
     """
-    from playwright.sync_api import Error as PlaywrightError
-    from playwright.sync_api import sync_playwright
+    from playwright.async_api import Error as PlaywrightError
+    from playwright.async_api import async_playwright
 
     html = render_html(digest_date, items)
 
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch()
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
             try:
-                page = browser.new_page()
-                page.set_content(html, wait_until="load")
-                pdf_bytes = page.pdf(
+                page = await browser.new_page()
+                await page.set_content(html, wait_until="load")
+                pdf_bytes = await page.pdf(
                     format="A4",
                     print_background=True,
                     display_header_footer=True,
@@ -129,7 +129,7 @@ def render_bytes(digest_date: date, items: list[dict]) -> bytes:
                     },
                 )
             finally:
-                browser.close()
+                await browser.close()
     except PlaywrightError as e:
         if "playwright install" in str(e) or "Executable doesn't exist" in str(e):
             raise RuntimeError(
@@ -142,7 +142,7 @@ def render_bytes(digest_date: date, items: list[dict]) -> bytes:
     return pdf_bytes
 
 
-def render(digest_date: date, items: list[dict], out_path: Path | None = None) -> str:
+async def render(digest_date: date, items: list[dict], out_path: Path | None = None) -> str:
     """Render digest and upload to R2.
 
     Args:
@@ -159,7 +159,7 @@ def render(digest_date: date, items: list[dict], out_path: Path | None = None) -
     """
     from . import r2
 
-    pdf_bytes = render_bytes(digest_date, items)
+    pdf_bytes = await render_bytes(digest_date, items)
     date_str = digest_date.strftime("%Y-%m-%d")
     url = r2.upload(pdf_bytes, date_str)
     log.info("PDF uploaded to R2: %s", url)
@@ -169,7 +169,7 @@ def render(digest_date: date, items: list[dict], out_path: Path | None = None) -
 # --------------------------------------------------------------------------
 # Preview with real items from the DB (no LLM calls, nothing saved)
 # --------------------------------------------------------------------------
-def _preview(n: int = 3) -> Path:
+async def _preview(n: int = 3) -> Path:
     from . import db
     from .config import OUTPUT_DIR
 
@@ -186,7 +186,7 @@ def _preview(n: int = 3) -> Path:
             ]
             items.append(full)
     
-    pdf_bytes = render_bytes(date.today(), items)
+    pdf_bytes = await render_bytes(date.today(), items)
     out_path = OUTPUT_DIR / "preview.pdf"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_bytes(pdf_bytes)
@@ -194,6 +194,8 @@ def _preview(n: int = 3) -> Path:
 
 
 if __name__ == "__main__":
+    import asyncio
+    
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)-7s %(message)s",
@@ -202,6 +204,6 @@ if __name__ == "__main__":
     from . import db
 
     try:
-        print(f"Wrote {_preview()}")
+        print(f"Wrote {asyncio.run(_preview())}")
     except (db.DatabaseProblem, RuntimeError) as e:
         raise SystemExit(f"error: {e}")

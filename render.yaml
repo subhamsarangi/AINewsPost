@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: ainewspost
+    env: python
+    plan: standard
+    buildCommand: |
+      pip install uv
+      uv sync
+      uv run playwright install chromium
+    startCommand: uv run python main.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"

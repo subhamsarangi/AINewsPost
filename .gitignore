@@ -4,6 +4,4 @@ __pycache__/
 *.pyc
 .env
 output/
-.streamlit/secrets.toml
 meta/
-*env.toml

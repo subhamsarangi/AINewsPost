@@ -54,21 +54,21 @@ def _make_client() -> httpx.Client:
 # --------------------------------------------------------------------------
 # Getting the HTML
 # --------------------------------------------------------------------------
-def _render_browser(url: str, wait_for: str) -> str:
+async def _render_browser(url: str, wait_for: str) -> str:
     """For pages whose list is built by JavaScript: load in Chromium, wait for items."""
-    from playwright.sync_api import Error as PlaywrightError
-    from playwright.sync_api import sync_playwright
+    from playwright.async_api import Error as PlaywrightError
+    from playwright.async_api import async_playwright
 
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch()
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
             try:
-                page = browser.new_page(user_agent=UA)
-                page.goto(url, wait_until="domcontentloaded", timeout=30_000)
-                page.wait_for_selector(wait_for, timeout=15_000)
-                return page.content()
+                page = await browser.new_page(user_agent=UA)
+                await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+                await page.wait_for_selector(wait_for, timeout=15_000)
+                return await page.content()
             finally:
-                browser.close()
+                await browser.close()
     except PlaywrightError as e:
         if "playwright install" in str(e) or "Executable doesn't exist" in str(e):
             raise RuntimeError(
@@ -77,9 +77,9 @@ def _render_browser(url: str, wait_for: str) -> str:
         raise
 
 
-def _get_html(source: dict) -> str:
+async def _get_html(source: dict) -> str:
     if source.get("render") == "browser":
-        return _render_browser(source["url"], source["selectors"]["item"])
+        return await _render_browser(source["url"], source["selectors"]["item"])
     with _make_client() as client:
         resp = client.get(source["url"])
         resp.raise_for_status()
@@ -145,7 +145,7 @@ def _parse_item(node, sel: dict, base_url: str) -> dict | None:
     return {"url": urljoin(base_url, href), "title": title, "published": published}
 
 
-def fetch(source: dict, since: datetime | None = None) -> list[dict]:
+async def fetch(source: dict, since: datetime | None = None) -> list[dict]:
     sel = source.get("selectors") or {}
     for key in ("item", "title"):
         if not sel.get(key) or str(sel[key]).strip().upper() == "TODO":
@@ -154,7 +154,7 @@ def fetch(source: dict, since: datetime | None = None) -> list[dict]:
                 "in sources.yaml"
             )
 
-    tree = LexborHTMLParser(_get_html(source))
+    tree = LexborHTMLParser(await _get_html(source))
     nodes = tree.css(sel["item"])
     if not nodes:
         raise ValueError(

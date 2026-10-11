@@ -17,10 +17,13 @@ from .config import ROOT
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    import asyncio
     from . import pipeline  # imported late: keeps --help instant
 
-    result = pipeline.run(
-        dry_run=args.dry_run, no_fetch=args.no_fetch, force=args.force
+    result = asyncio.run(
+        pipeline.run(
+            dry_run=args.dry_run, no_fetch=args.no_fetch, force=args.force
+        )
     )
 
     failed = [s for s in result["sources"] if s["error"]]

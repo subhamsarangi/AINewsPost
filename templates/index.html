@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}AINewsPost - All Items{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Filters -->
+    <div class="bg-gray-800 rounded-lg shadow p-6 space-y-4 border border-gray-700">
+        <h2 class="text-lg font-semibold text-white">Filters</h2>
+        <form hx-get="/" hx-target="#items" hx-select="#items" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <input
+                type="text"
+                name="search"
+                placeholder="Search..."
+                value="{{ search }}"
+                class="px-4 py-2 bg-gray-700 border border-gray-600 text-white placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+            >
+            <select name="date_filter" class="px-4 py-2 bg-gray-700 border border-gray-600 text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                <option value="">Any time</option>
+                <option value="24h" {% if date_filter == '24h' %}selected{% endif %}>Last 24h</option>
+                <option value="7d" {% if date_filter == '7d' %}selected{% endif %}>Last 7 days</option>
+                <option value="30d" {% if date_filter == '30d' %}selected{% endif %}>Last 30 days</option>
+            </select>
+            <select name="category" class="px-4 py-2 bg-gray-700 border border-gray-600 text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                <option value="">All categories</option>
+                <option value="research" {% if category == 'research' %}selected{% endif %}>Research</option>
+                <option value="mlops" {% if category == 'mlops' %}selected{% endif %}>MLOps</option>
+                <option value="news" {% if category == 'news' %}selected{% endif %}>News</option>
+                <option value="community" {% if category == 'community' %}selected{% endif %}>Community</option>
+            </select>
+            <div class="flex gap-2">
+                <label class="flex items-center px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg cursor-pointer hover:bg-gray-600 flex-1">
+                    <input type="checkbox" name="starred" {% if starred %}checked{% endif %} class="mr-2">
+                    <span class="text-sm text-gray-300">Starred</span>
+                </label>
+                <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Filter</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Items List -->
+    <div id="items" class="space-y-4">
+        {% if items %}
+        <h2 class="text-2xl font-semibold text-white mb-4">
+            {% if source_name %}{{ source_name }}{% elif search %}Search Results{% elif category %}{{ category|title }}{% elif starred %}Starred Items{% else %}Latest Items{% endif %}
+        </h2>
+        {% endif %}
+        {% for item in items %}
+        <div class="bg-gray-800 rounded-lg shadow hover:shadow-lg transition p-6 border-l-4 border-indigo-600">
+            <div class="flex justify-between items-start">
+                <div class="flex-1">
+                    <a href="/item/{{ item.slug }}" class="text-xl font-semibold text-white hover:text-indigo-400">
+                        {{ item.title }}
+                    </a>
+                    <p class="text-sm text-gray-400 mt-1">
+                        {{ item.source_name }} · 
+                        {% if item.published_at %}{{ item.published_at.strftime('%b %d, %Y') }}{% endif %}
+                        {% if item.points %} · ▲ {{ item.points }}{% endif %}
+                    </p>
+                    {% if item.snippet %}
+                    <p class="text-gray-300 mt-3 line-clamp-2">{{ item.snippet }}</p>
+                    {% endif %}
+                </div>
+                <div class="flex gap-2 ml-4 flex-shrink-0">
+                    <button
+                        hx-post="/api/star/{{ item.id }}"
+                        hx-swap="outerHTML"
+                        class="px-3 py-2 text-lg {% if item.starred %}text-yellow-400{% else %}text-gray-500{% endif %} hover:text-yellow-400"
+                    >
+                        {% if item.starred %}★{% else %}☆{% endif %}
+                    </button>
+                    <a href="/item/{{ item.slug }}" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 whitespace-nowrap">
+                        Details
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if has_more %}
+    <div class="text-center">
+        <button
+            hx-get="/?page={{ page + 1 }}&search={{ search }}&date_filter={{ date_filter }}&category={{ category }}&starred={{ starred }}"
+            hx-target="#items"
+            hx-swap="innerHTML"
+            class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+        >
+            Load more...
+        </button>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

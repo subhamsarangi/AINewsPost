@@ -4,6 +4,7 @@ Only this file knows the order of the stages. Every stage is idempotent and
 commits on its own, so a crash loses nothing already done and a rerun resumes.
 """
 
+import asyncio
 import logging
 from datetime import date
 
@@ -52,7 +53,7 @@ def _fetcher(source: dict):
 # --------------------------------------------------------------------------
 # Stage: ingest (one source failing never stops the others)
 # --------------------------------------------------------------------------
-def _ingest_source(source: dict, admin_id: str) -> dict:
+async def _ingest_source(source: dict, admin_id: str) -> dict:
     sid = source["id"]
     fetch = _fetcher(source)
     if fetch is None:
@@ -65,7 +66,7 @@ def _ingest_source(source: dict, admin_id: str) -> dict:
     with db.connect() as conn:
         since = db.get_last_fetch(conn, sid)
     try:
-        items = fetch(source, since)  # pure: network only, no DB
+        items = await fetch(source, since)  # pure: network only, no DB
     except Exception as e:
         msg = f"error: {type(e).__name__}: {e}"[:300]
         log.warning("source '%s' failed: %s", sid, msg)
@@ -152,7 +153,7 @@ def _build_items(picks: list[dict]) -> list[dict]:
 # --------------------------------------------------------------------------
 # The run
 # --------------------------------------------------------------------------
-def run(
+async def run(
     dry_run: bool = False,
     no_fetch: bool = False,
     force: bool = False,
@@ -163,12 +164,12 @@ def run(
     _setup_logging()
     db.check()  # fail fast: before any network work
     try:
-        return _run(dry_run=dry_run, no_fetch=no_fetch, force=force, today=today)
+        return await _run(dry_run=dry_run, no_fetch=no_fetch, force=force, today=today)
     except db.CONNECTION_ERRORS as e:  # connection dropped mid-run
         raise db.DatabaseProblem(db.explain(e)) from e
 
 
-def _run(
+async def _run(
     dry_run: bool = False,
     no_fetch: bool = False,
     force: bool = False,
@@ -205,7 +206,9 @@ def _run(
     else:
         sources = load_sources()
         log.info("[1/5] fetching %d sources", len(sources))
-        result["sources"] = [_ingest_source(s, admin_id) for s in sources]
+        result["sources"] = await asyncio.gather(
+            *[_ingest_source(s, admin_id) for s in sources]
+        )
     log.info("[2/5] extracting page text, embedding, clustering")
     _process_new_items()
     log.info("[3/5] ranking candidates")
@@ -249,7 +252,7 @@ def _run(
         log.info("[5/5] rendering PDF")
         from . import pdf  # imported late: heavy (Playwright)
 
-        pdf_url = pdf.render(today, items)
+        pdf_url = await pdf.render(today, items)
         with db.connect() as conn:
             db.save_digest(conn, today, pdf_url, [i["id"] for i in items], owner_id=admin_id)
     except Exception:

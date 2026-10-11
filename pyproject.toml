@@ -15,11 +15,13 @@ dependencies = [
     "python-dotenv>=1.0",
     "jinja2>=3.1",
     "playwright>=1.47",   # PDF rendering (no GTK needed on Windows)
-    "streamlit>=1.40",
-    "streamlit-scroll-to-top>=0.0.4",
-    "streamlit-cookies-controller>=0.0.4",
-    "streamlit-lottie>=0.0.5",
+    "fastapi>=0.104",
+    "uvicorn>=0.24",
+    "python-jose[cryptography]>=3.3",
+    "passlib[bcrypt]>=1.7",
+    "python-multipart>=0.0.6",
     "boto3>=1.28",        # Cloudflare R2 uploads
+    "numpy>=2.5.4",
 ]
 
 [dependency-groups]
