@@ -380,6 +380,39 @@ async def chat(user_message: str, session_history: list[dict] | None = None) -> 
     
     history.append({"role": "user", "content": masked})
     
+    # Check input policy BEFORE generating response - save tokens if off_topic
+    if DEBUG:
+        print(f"  [input-check] checking verdict for: {masked[:50]}...")
+    input_verdict, input_reason = await policy_verdict(masked, stage="input")
+    if DEBUG:
+        print(f"  [input-check] verdict: {input_verdict}, reason: {input_reason}")
+    
+    if input_verdict == "restricted":
+        if DEBUG:
+            print(f"  [input-check] RESTRICTED - returning early")
+        reply = "Neil here. That's one subject I can't get into, sorry! I'd love to chat about other AI topics though, like LLMs, agents, RAG, or machine learning. Want to try one of those?"
+        history.append({"role": "assistant", "content": reply})
+        return {
+            "response": reply,
+            "search_query": None,
+            "search_results": None,
+            "guardrail_verdict": input_verdict,
+            "guardrail_reason": input_reason,
+        }
+    
+    if input_verdict == "off_topic":
+        if DEBUG:
+            print(f"  [input-check] OFF_TOPIC - returning early, NOT calling LLM")
+        reply = "Hey! I can only help with AI topics like LLMs, agents, RAG, transformers, machine learning, and platform engineering. How can I help you with those?"
+        history.append({"role": "assistant", "content": reply})
+        return {
+            "response": reply,
+            "search_query": None,
+            "search_results": None,
+            "guardrail_verdict": input_verdict,
+            "guardrail_reason": input_reason,
+        }
+    
     # Run guardrails and get response
     response = await rails.generate_async(messages=history)
     reply = mask_pii(response["content"], include_person=False)
@@ -408,6 +441,10 @@ async def chat(user_message: str, session_history: list[dict] | None = None) -> 
     
     # Capture metadata
     verdict, reason = await policy_verdict(reply, stage="output")
+    
+    # If off_topic, redirect to AI topics instead of giving the answer
+    if verdict == "off_topic":
+        reply = "Hey! I can only help with AI topics like LLMs, agents, RAG, transformers, machine learning, and platform engineering. How can I help you with those? Feel free to ask me anything in my wheelhouse!"
     
     return {
         "response": reply,
