@@ -9,7 +9,7 @@ services:
       uv run playwright install-deps chromium
       uv run playwright install chromium
     startCommand: |
-      uv run playwright install chromium
+      uv run playwright install chromium 2>/dev/null || true
       uv run python main.py
     envVars:
       - key: PYTHON_VERSION
