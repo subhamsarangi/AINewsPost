@@ -1,8 +1,14 @@
 """FastAPI app for ainewspost."""
 
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+
+# Windows event loop fix MUST be first, before any async imports
+if sys.platform == "win32":
+    import asyncio
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from fastapi import FastAPI, Depends, HTTPException, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -46,8 +52,14 @@ def render(template_name: str, **context) -> str:
 async def http_exception_handler(request: Request, exc: HTTPException):
     """Return HTML error pages instead of JSON for user-facing errors."""
     if exc.status_code == 401:
+        # Only show error message if redirected from a protected route (has referer)
+        # First visit to /login won't have referer
+        error_msg = None
+        referer = request.headers.get("referer")
+        if referer and "/login" not in referer:
+            error_msg = "Session expired. Please login again."
         return HTMLResponse(
-            render("login.html", error="Session expired. Please login again."),
+            render("login.html", error=error_msg),
             status_code=401,
         )
     elif exc.status_code == 404:
