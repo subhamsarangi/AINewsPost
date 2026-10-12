@@ -12,3 +12,23 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.12"
+      - key: ENVIRONMENT
+        value: production
+      - key: PORT
+        value: "8000"
+    envVarGroups:
+      - name: api-keys
+        environments:
+          - OPENAI_API_KEY
+          - TAVILY_API_KEY
+          - SECRET_KEY
+      - name: database
+        environments:
+          - SUPABASE_DATABASE_URL
+      - name: r2-storage
+        environments:
+          - R2_ACCOUNT_ID
+          - R2_ACCESS_KEY_ID
+          - R2_SECRET_ACCESS_KEY
+          - R2_BUCKET_NAME
+          - R2_PUBLIC_URL
