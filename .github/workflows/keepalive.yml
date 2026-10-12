@@ -10,8 +10,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping site
+        env:
+          SITE_AUTH: ${{ secrets.SITE_AUTH }}
         run: |
+          # Basic auth: secret should be in the form username:password
           curl -fsS --retry 3 --retry-delay 10 -m 90 \
+            -u "$SITE_AUTH" \
             -o /dev/null \
             -w "HTTP %{http_code} in %{time_total}s\n" \
             https://ainewspost-9fcb.onrender.com/
+
+          # If your site uses a token/API key instead, delete the -u line above
+          # and use this header line in its place:
+          #   -H "Authorization: Bearer $SITE_AUTH" \
