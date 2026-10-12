@@ -28,14 +28,23 @@ ALLOWED_TOPICS = (
 # --------------------------------------------------------------------------
 # Presidio (PII masking)
 # --------------------------------------------------------------------------
-nlp_engine = NlpEngineProvider(
-    nlp_configuration={
-        "nlp_engine_name": "spacy",
-        "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
-    }
-).create_engine()
-analyzer = AnalyzerEngine(nlp_engine=nlp_engine, supported_languages=["en"])
-anonymizer = AnonymizerEngine()
+try:
+    nlp_engine = NlpEngineProvider(
+        nlp_configuration={
+            "nlp_engine_name": "spacy",
+            "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
+        }
+    ).create_engine()
+    analyzer = AnalyzerEngine(nlp_engine=nlp_engine, supported_languages=["en"])
+    anonymizer = AnonymizerEngine()
+    _presidio_available = True
+except Exception as e:
+    # Fallback if spacy model not available (e.g. render free tier)
+    analyzer = None
+    anonymizer = None
+    _presidio_available = False
+    import warnings
+    warnings.warn(f"Presidio/spacy unavailable, PII masking disabled: {e}")
 
 _TOPIC_WORDS = [
     "ai", "llm", "gpt", "openai", "anthropic", "claude", "gemini", "rag",
@@ -50,7 +59,9 @@ _PII_ENTITIES = [
 
 
 def mask_pii(text: str, include_person: bool = True) -> str:
-    """Mask PII in text using Presidio."""
+    """Mask PII in text using Presidio. Skips if model unavailable."""
+    if not _presidio_available:
+        return text
     entities = _PII_ENTITIES if include_person else [e for e in _PII_ENTITIES if e != "PERSON"]
     results = analyzer.analyze(
         text=text,
@@ -317,6 +328,12 @@ async def chat(user_message: str) -> dict:
         }
     """
     global history
+    
+    # Recreate rails fresh each call
+    config = RailsConfig.from_content(colang_content=COLANG_CONFIG, yaml_content=YAML_CONFIG)
+    rails = LLMRails(config)
+    rails.register_action(policy_verdict, "policy_verdict")
+    rails.register_action(web_search, "web_search")
     
     masked = mask_pii(user_message)
     if DEBUG and masked != user_message:

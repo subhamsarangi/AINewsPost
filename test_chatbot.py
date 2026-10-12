@@ -44,14 +44,23 @@ ALLOWED_TOPICS = (
 # --------------------------------------------------------------------------
 # 1. Presidio (PII masking)
 # --------------------------------------------------------------------------
-nlp_engine = NlpEngineProvider(
-    nlp_configuration={
-        "nlp_engine_name": "spacy",
-        "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
-    }
-).create_engine()
-analyzer = AnalyzerEngine(nlp_engine=nlp_engine, supported_languages=["en"])
-anonymizer = AnonymizerEngine()
+try:
+    nlp_engine = NlpEngineProvider(
+        nlp_configuration={
+            "nlp_engine_name": "spacy",
+            "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
+        }
+    ).create_engine()
+    analyzer = AnalyzerEngine(nlp_engine=nlp_engine, supported_languages=["en"])
+    anonymizer = AnonymizerEngine()
+    _presidio_available = True
+except Exception as e:
+    # Fallback if spacy model not available
+    analyzer = None
+    anonymizer = None
+    _presidio_available = False
+    if DEBUG:
+        print(f"  [presidio] unavailable, PII masking disabled: {e}")
 
 # Words from the allowed topics that the NER model may wrongly flag as names
 # (e.g. "Claude", "RAG"). Anything overlapping these is NOT masked.
@@ -68,6 +77,8 @@ _PII_ENTITIES = [
 
 
 def mask_pii(text: str, include_person: bool = True) -> str:
+    if not _presidio_available:
+        return text
     entities = _PII_ENTITIES if include_person else [e for e in _PII_ENTITIES if e != "PERSON"]
     results = analyzer.analyze(
         text=text,
