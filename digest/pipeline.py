@@ -273,16 +273,7 @@ async def _run(
         log_bg("[5/5] rendering PDF")
         from . import pdf  # imported late: heavy (Playwright)
 
-        pdf_path = None
-        try:
-            pdf_path = await pdf.render(today, items)
-        except RuntimeError as e:
-            if "Chromium" in str(e):
-                log_bg(f"WARNING: {e}")
-                pdf_path = None  # skip PDF, continue
-            else:
-                raise
-        
+        pdf_path = await pdf.render(today, items)
         with db.connect() as conn:
             db.save_digest(
                 conn, today, pdf_path, [i["id"] for i in items], owner_id=admin_id
@@ -291,10 +282,7 @@ async def _run(
         _restore(today, restore, admin_id)
         raise
     result["pdf"] = pdf_path
-    if pdf_path:
-        log_bg(f"digest saved: {pdf_path}")
-    else:
-        log_bg("digest saved without PDF (Chromium unavailable)")
+    log_bg(f"digest saved: {pdf_path}")
     log_bg(llm.usage_report())
     return result
 
