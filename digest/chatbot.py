@@ -189,9 +189,12 @@ META_DOMAINS = [
 
 async def tavily_search(query: str) -> list[dict]:
     """Search the web using Tavily."""
-    client = AsyncTavilyClient(api_key=os.environ.get("TAVILY_API_KEY", ""))
-    if not os.environ.get("TAVILY_API_KEY"):
+    key = os.environ.get("TAVILY_API_KEY", "")
+    if DEBUG:
+        print(f"  [tavily] key present: {bool(key)}, query: {query}")
+    if not key:
         return []
+    client = AsyncTavilyClient(api_key=key)
     resp = await client.search(
         query=query,
         search_depth="basic",
@@ -203,7 +206,7 @@ async def tavily_search(query: str) -> list[dict]:
 
 async def web_search() -> str:
     """Execute web search if a query was set by the classifier."""
-    query = _pending.pop("query", "")
+    query = _pending.get("query", "")  # Use get, not pop
     if not query:
         return ""
     try:
@@ -214,10 +217,12 @@ async def web_search() -> str:
         return ""
     if DEBUG:
         print(f"  [tavily] query={query!r} results={len(results)}")
-    return "\n".join(
+    results_text = "\n".join(
         f"- {r.get('title', '')} ({r.get('url', '')}): {(r.get('content') or '')[:500]}"
         for r in results
     )
+    _pending["results"] = results_text
+    return results_text
 
 
 # --------------------------------------------------------------------------
@@ -244,9 +249,10 @@ instructions:
       - Be brief. Default to 1-4 sentences.
       - Follow format requests exactly. If asked for names, counts or a list,
         give just that in a compact list, with no extra sections.
-      - No preamble, no restating the question, no unrequested caveats, and no
-        closing offers or follow-up questions unless you truly cannot answer
-        without them.
+      - No preamble, no restating the question, no unrequested caveats.
+      - NEVER suggest what user should ask/tell next. No "if you tell me...",
+        no "you could ask about...", no conditional examples of further questions,
+        no offers to help with related topics. Answer what was asked, stop.
       - If something is uncertain, still give your best answer, and add at most
         one short note about the uncertainty.
       - Light humor only when it fits in a few words.
@@ -327,13 +333,15 @@ async def chat(user_message: str) -> dict:
             "guardrail_reason": str,
         }
     """
-    global history
+    global history, _pending
     
     # Recreate rails fresh each call
     config = RailsConfig.from_content(colang_content=COLANG_CONFIG, yaml_content=YAML_CONFIG)
     rails = LLMRails(config)
     rails.register_action(policy_verdict, "policy_verdict")
     rails.register_action(web_search, "web_search")
+    
+    _pending = {}  # Reset pending
     
     masked = mask_pii(user_message)
     if DEBUG and masked != user_message:
@@ -350,10 +358,12 @@ async def chat(user_message: str) -> dict:
     # Capture metadata
     verdict, reason = await policy_verdict(reply, stage="output")
     search_query = _pending.get("query", "")
+    search_results = _pending.get("results", "")
     
     return {
         "response": reply,
         "search_query": search_query or None,
+        "search_results": search_results or None,
         "guardrail_verdict": verdict,
         "guardrail_reason": reason,
     }

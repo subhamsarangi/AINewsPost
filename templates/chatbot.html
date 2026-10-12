@@ -3,7 +3,133 @@
 {% block title %}Chatbot{% endblock %}
 
 {% block content %}
-<div class="chatbot-container" style="flex: 1; display: flex; flex-direction: row; margin: 0; padding: 0; min-height: 0;">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<style>
+.markdown-content {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.markdown-content h1, .markdown-content h2, .markdown-content h3 {
+  margin: 0.75rem 0 0.5rem 0;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+.markdown-content h1 { font-size: 1.5rem; }
+.markdown-content h2 { font-size: 1.3rem; }
+.markdown-content h3 { font-size: 1.1rem; }
+.markdown-content p {
+  margin: 0.5rem 0;
+  color: #d0d0d0;
+}
+.markdown-content strong, .markdown-content b {
+  font-weight: 700;
+  color: #e0e0e0;
+}
+.markdown-content em, .markdown-content i {
+  font-style: italic;
+  color: #d0d0d0;
+}
+.markdown-content code {
+  background: #1a1a1a;
+  padding: 0.2rem 0.4rem;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 0.9rem;
+  color: #60a5fa;
+}
+.markdown-content pre {
+  background: #1a1a1a;
+  padding: 0.75rem;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+  border: 1px solid #333;
+}
+.markdown-content pre code {
+  background: none;
+  padding: 0;
+  color: #d0d0d0;
+}
+.markdown-content ul, .markdown-content ol {
+  margin: 0.75rem 0;
+  padding-left: 2rem;
+}
+.markdown-content li {
+  margin: 0.35rem 0;
+  color: #d0d0d0;
+}
+.markdown-content blockquote {
+  border-left: 3px solid #3b82f6;
+  padding-left: 0.75rem;
+  margin: 0.75rem 0;
+  color: #a0a0a0;
+  font-style: italic;
+}
+.markdown-content a {
+  color: #60a5fa;
+  text-decoration: underline;
+}
+.markdown-content a:hover {
+  color: #93c5fd;
+}
+.markdown-content table {
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+}
+.markdown-content td, .markdown-content th {
+  border: 1px solid #444;
+  padding: 0.5rem;
+}
+.markdown-content th {
+  background: #1a1a1a;
+  font-weight: 600;
+}
+
+.message-info-accordion {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.info-toggle {
+  background: none;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  text-align: left;
+  font-size: 0.85rem;
+}
+
+.info-toggle:hover {
+  color: #aaa;
+}
+
+.info-content {
+  margin-top: 0.35rem;
+  padding: 0.5rem;
+  background: #1a1a1a;
+  border-radius: 3px;
+  color: #999;
+}
+
+.info-content div {
+  margin: 0.35rem 0;
+}
+
+.info-content pre {
+  background: #0a0a0a;
+  padding: 0.35rem;
+  border-radius: 2px;
+  font-size: 0.8rem;
+  overflow-x: auto;
+  margin: 0.25rem 0;
+}
+</style>
+
+<div class="chatbot-container" style="flex: 1; display: flex; flex-direction: row; margin: 0; padding: 0; min-height: 0; overflow: hidden;">
   <div class="sidebar">
     <div class="sidebar-header">
       <h2>Chats</h2>
@@ -33,11 +159,12 @@
     </div>
 
     <div id="guardrails-section" class="guardrails-section hidden">
-      <div class="guardrails-header">
+      <button id="guardrails-toggle" class="guardrails-header" onclick="toggleGuardrails()" style="width: 100%; text-align: left; background: none; border: none; cursor: pointer; padding: 0; display: flex; align-items: center; gap: 0.5rem; color: inherit;">
+        <span id="toggle-icon" style="display: inline-block; transition: transform 0.2s;">▶</span>
         <strong>Processing:</strong>
         <span id="guardrail-verdict" class="verdict"></span>
-      </div>
-      <div id="guardrails-details">
+      </button>
+      <div id="guardrails-details" class="guardrails-details" style="display: none; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid #444;">
         <p id="guardrail-reason"></p>
         <div id="search-section" class="search-section hidden">
           <strong>Web Search:</strong>
@@ -49,8 +176,8 @@
 
     <div class="chat-input-area">
       <form id="chat-form" onsubmit="sendMessage(event)">
-        <textarea id="message-input" placeholder="Ask me about AI, LLMs, agents..." rows="1"></textarea>
-        <button type="submit" class="btn btn-primary">Send</button>
+        <textarea id="message-input" placeholder="Ask me about AI, LLMs, agents..." rows="1" disabled></textarea>
+        <button type="submit" class="btn btn-primary" id="send-btn" disabled>Send</button>
       </form>
     </div>
     {% else %}
@@ -177,10 +304,11 @@
 
 .chat-main {
   flex: 1;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
   background: #1f1f1f;
   height: 100%;
+  position: relative;
 }
 
 .chat-header {
@@ -208,6 +336,8 @@
   padding: 1rem;
   display: flex;
   flex-direction: column;
+  grid-row: 2;
+}
   gap: 1rem;
 }
 
@@ -235,6 +365,7 @@
 .message.user .message-content {
   background-color: #3b82f6;
   color: white;
+  margin-left: auto;
 }
 
 .message.assistant .message-content {
@@ -256,8 +387,8 @@
   display: none;
 }
 
-.guardrails-header {
-  margin-bottom: 0.75rem;
+.guardrails-details {
+  transition: max-height 0.2s ease, opacity 0.2s ease;
 }
 
 .verdict {
@@ -327,6 +458,9 @@
   border-top: 1px solid #444;
   background: #1f1f1f;
   flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+  grid-row: 4;
 }
 
 #chat-form, #new-chat-form {
@@ -432,13 +566,38 @@
 
 .spinner {
   display: inline-block;
-  animation: spin 1s linear infinite;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #444;
+  border-top: 2px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.loading-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  flex-direction: column;
+  gap: 1rem;
+  color: #888;
 }
 </style>
 
 <script>
 let currentSessionId = {{ current_session.id if current_session else 'null' }};
 let messageInput = document.getElementById('message-input');
+let isSending = false;
+let messagesLoaded = false;
+
+window.addEventListener('beforeunload', (e) => {
+  if (isSending) {
+    e.preventDefault();
+    e.returnValue = 'Message is being sent. Please wait...';
+    return 'Message is being sent. Please wait...';
+  }
+});
 
 async function loadSessions() {
   const list = document.getElementById('sessions-list');
@@ -471,13 +630,64 @@ async function loadSessions() {
 }
 
 async function loadSession(sessionId) {
-  window.location.href = `/chatbot?session=${sessionId}`;
+  currentSessionId = sessionId;
+  messagesLoaded = false;
+  
+  // Add spinner to session item
+  const clickedEl = event.target.closest('.session-item');
+  const spinner = document.createElement('span');
+  spinner.className = 'spinner';
+  spinner.style.marginLeft = '0.5rem';
+  clickedEl.appendChild(spinner);
+  
+  // Update URL without reload
+  window.history.pushState({}, '', `/chatbot?session=${sessionId}`);
+  
+  // Update active session in sidebar
+  document.querySelectorAll('.session-item').forEach(el => el.classList.remove('active'));
+  clickedEl.classList.add('active');
+  
+  // Reset message input
+  const messageInput = document.getElementById('message-input');
+  if (messageInput) {
+    messageInput.disabled = true;
+    messageInput.value = '';
+  }
+  const sendBtn = document.getElementById('send-btn');
+  if (sendBtn) sendBtn.disabled = true;
+  
+  // Show loading in chat area
+  let messagesDiv = document.getElementById('chat-messages');
+  if (!messagesDiv) {
+    messagesDiv = document.createElement('div');
+    messagesDiv.id = 'chat-messages';
+    messagesDiv.className = 'chat-messages';
+    const chatMain = document.querySelector('.chat-main');
+    chatMain.appendChild(messagesDiv);
+  }
+  
+  messagesDiv.innerHTML = `
+    <div class="loading-overlay">
+      <div class="spinner"></div>
+      <div>Loading chat...</div>
+    </div>
+  `;
+  
+  try {
+    // Load messages
+    await loadMessages();
+  } finally {
+    // Remove spinner
+    spinner.remove();
+  }
 }
 
 async function loadMessages() {
   if (!currentSessionId) return;
   
-  const messagesDiv = document.getElementById('chat-messages');
+  let messagesDiv = document.getElementById('chat-messages');
+  if (!messagesDiv) return;
+  
   messagesDiv.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #888;">Loading messages...</div>';
   
   try {
@@ -493,7 +703,40 @@ async function loadMessages() {
     data.messages.forEach(msg => {
       const msgEl = document.createElement('div');
       msgEl.className = `message ${msg.role}`;
-      msgEl.innerHTML = `<div class="message-content">${escapeHtml(msg.content)}</div>`;
+      
+      if (msg.role === 'assistant') {
+        // Render markdown for bot messages
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content markdown-content';
+        try {
+          if (window.marked) {
+            contentDiv.innerHTML = marked.parse(msg.content);
+          } else {
+            contentDiv.textContent = msg.content;
+          }
+        } catch (e) {
+          contentDiv.textContent = msg.content;
+        }
+        msgEl.appendChild(contentDiv);
+        
+        // Show guardrail info if present
+        if (msg.guardrail_info || msg.search_results) {
+          const infoDiv = document.createElement('div');
+          infoDiv.className = 'message-info-accordion';
+          infoDiv.innerHTML = `
+            <button class="info-toggle" onclick="toggleMessageInfo(this)">▶ Details</button>
+            <div class="info-content" style="display: none;">
+              ${msg.guardrail_info ? `<div><strong>Guardrails:</strong> ${escapeHtml(msg.guardrail_info)}</div>` : ''}
+              ${msg.search_results ? `<div><strong>Search Results:</strong><pre>${escapeHtml(msg.search_results)}</pre></div>` : ''}
+            </div>
+          `;
+          msgEl.appendChild(infoDiv);
+        }
+      } else {
+        // Plain text for user messages
+        msgEl.innerHTML = `<div class="message-content">${escapeHtml(msg.content)}</div>`;
+      }
+      
       messagesDiv.appendChild(msgEl);
     });
     
@@ -501,23 +744,43 @@ async function loadMessages() {
   } catch (err) {
     console.error(err);
     messagesDiv.innerHTML = '<div style="color: #f87171; padding: 1rem;">Failed to load messages</div>';
+  } finally {
+    messagesLoaded = true;
+    if (messageInput) messageInput.disabled = false;
+    const sendBtn = document.getElementById('send-btn');
+    if (sendBtn) sendBtn.disabled = false;
   }
 }
 
 async function sendMessage(e) {
   e.preventDefault();
+  if (!messagesLoaded) {
+    alert('Please wait for messages to load');
+    return;
+  }
+  if (isSending) {
+    return;
+  }
   const message = messageInput.value.trim();
   if (!message || !currentSessionId) return;
   
-  messageInput.value = '';
-  messageInput.disabled = true;
+  isSending = true;
+  const btn = e.target.querySelector('button[type="submit"]');
   
-  // Add user message to UI
+  // Show user message immediately
   const messagesDiv = document.getElementById('chat-messages');
   const userMsgEl = document.createElement('div');
   userMsgEl.className = 'message user';
   userMsgEl.innerHTML = `<div class="message-content">${escapeHtml(message)}</div>`;
   messagesDiv.appendChild(userMsgEl);
+  
+  // Clear input immediately
+  messageInput.value = '';
+  
+  // Disable button + show loading
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+  messageInput.disabled = true;
   
   // Add loading indicator
   const loadingMsgEl = document.createElement('div');
@@ -580,10 +843,24 @@ async function sendMessage(e) {
       searchSection.classList.add('hidden');
     }
     
-    // Add bot message to UI
+    // Add bot message to UI with markdown
     const botMsgEl = document.createElement('div');
     botMsgEl.className = 'message assistant';
-    botMsgEl.innerHTML = `<div class="message-content">${escapeHtml(data.response)}</div>`;
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content markdown-content';
+    
+    try {
+      if (window.marked) {
+        contentDiv.innerHTML = marked.parse(data.response);
+      } else {
+        contentDiv.textContent = data.response;
+      }
+    } catch (e) {
+      console.error('Markdown render error:', e);
+      contentDiv.textContent = data.response;
+    }
+    
+    botMsgEl.appendChild(contentDiv);
     messagesDiv.appendChild(botMsgEl);
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
     
@@ -591,6 +868,9 @@ async function sendMessage(e) {
     console.error(err);
     loadingMsgEl.innerHTML = `<div class="message-content" style="color: #f87171;">Failed to send message</div>`;
   } finally {
+    isSending = false;
+    btn.disabled = false;
+    btn.textContent = 'Send';
     messageInput.disabled = false;
     messageInput.focus();
   }
@@ -598,50 +878,203 @@ async function sendMessage(e) {
 
 async function createSessionAndSend(e) {
   e.preventDefault();
-  const message = document.getElementById('first-message-input').value.trim();
+  const input = document.getElementById('first-message-input');
+  const message = input.value.trim();
   if (!message) return;
   
-  // Create session first
+  const btn = e.target.querySelector('button[type="submit"]');
+  
+  // Clear input immediately
+  input.value = '';
+  
+  // Show user message immediately
+  const messagesDiv = document.createElement('div');
+  messagesDiv.id = 'chat-messages';
+  messagesDiv.className = 'chat-messages';
+  
+  const userMsgEl = document.createElement('div');
+  userMsgEl.className = 'message user';
+  userMsgEl.innerHTML = `<div class="message-content">${escapeHtml(message)}</div>`;
+  messagesDiv.appendChild(userMsgEl);
+  
+  // Show loading
+  const loadingMsgEl = document.createElement('div');
+  loadingMsgEl.className = 'message assistant';
+  loadingMsgEl.innerHTML = `<div class="message-content" style="color: #888;">⏳ Creating chat...</div>`;
+  messagesDiv.appendChild(loadingMsgEl);
+  
+  // Replace empty state + rebuild chat UI properly
+  const chatMain = document.querySelector('.chat-main');
+  const emptyState = document.querySelector('.empty-state');
+  const inputArea = document.querySelector('.chat-input-area');
+  
+  if (emptyState) emptyState.remove();
+  
+  // Add header
+  const header = document.createElement('div');
+  header.className = 'chat-header';
+  header.innerHTML = `
+    <h2 id="session-title">New Chat</h2>
+    <div class="chat-actions">
+      <button id="delete-session-btn" class="btn btn-danger btn-sm">Delete</button>
+    </div>
+  `;
+  
+  // Add guardrails section
+  const guardrailsSection = document.createElement('div');
+  guardrailsSection.id = 'guardrails-section';
+  guardrailsSection.className = 'guardrails-section hidden';
+  guardrailsSection.innerHTML = `
+    <button id="guardrails-toggle" class="guardrails-header" onclick="toggleGuardrails()" style="width: 100%; text-align: left; background: none; border: none; cursor: pointer; padding: 0; display: flex; align-items: center; gap: 0.5rem; color: inherit;">
+      <span id="toggle-icon" style="display: inline-block; transition: transform 0.2s;">▶</span>
+      <strong>Processing:</strong>
+      <span id="guardrail-verdict" class="verdict"></span>
+    </button>
+    <div id="guardrails-details" class="guardrails-details" style="display: none; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid #444;">
+      <p id="guardrail-reason"></p>
+      <div id="search-section" class="search-section hidden">
+        <strong>Web Search:</strong>
+        <p id="search-query"></p>
+        <div id="search-results"></div>
+      </div>
+    </div>
+  `;
+  
+  // Insert in correct order
+  chatMain.insertBefore(header, inputArea);
+  chatMain.insertBefore(messagesDiv, inputArea);
+  chatMain.insertBefore(guardrailsSection, inputArea);
+  
+  // Wire up delete button
+  document.getElementById('delete-session-btn').addEventListener('click', deleteSession);
+  
+  btn.disabled = true;
+  btn.textContent = 'Creating chat...';
+  
   try {
+    // Create session
     const now = new Date();
     const title = now.toLocaleString();
-    const res = await fetch('/api/chatbot/sessions', {
+    const sessionRes = await fetch('/api/chatbot/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title })
     });
     
-    const data = await res.json();
-    if (data.error || !data.session_id) {
-      alert('Error creating chat: ' + (data.error || 'unknown'));
+    const sessionData = await sessionRes.json();
+    if (sessionData.error || !sessionData.session_id) {
+      loadingMsgEl.innerHTML = `<div class="message-content" style="color: #f87171;">Error creating chat</div>`;
+      btn.disabled = false;
+      btn.textContent = 'Start Chat';
       return;
     }
     
-    currentSessionId = data.session_id;
+    currentSessionId = sessionData.session_id;
+    messagesLoaded = true;
     
-    // Reload page with new session
-    window.location.href = `/chatbot?session=${currentSessionId}`;
+    // Update title
+    const titleEl = document.getElementById('session-title');
+    if (titleEl) titleEl.textContent = title;
     
-    // After redirect, first message will be in input
-    // Store it in localStorage to auto-send
-    localStorage.setItem('chatbot_first_message', message);
+    // Update URL
+    window.history.pushState({}, '', `/chatbot?session=${currentSessionId}`);
+    
+    // Transform form ID and input for existing session
+    const form = document.getElementById('new-chat-form');
+    form.id = 'chat-form';
+    form.onsubmit = sendMessage;
+    input.id = 'message-input';
+    input.placeholder = 'Ask me about AI, LLMs, agents...';
+    
+    // Update sidebar with new session
+    const sessionsList = document.getElementById('sessions-list');
+    const newSessionEl = document.createElement('div');
+    newSessionEl.className = 'session-item active';
+    newSessionEl.innerHTML = `
+      <div class="session-title">${escapeHtml(title)}</div>
+      <div class="session-date">${new Date().toLocaleDateString()}</div>
+    `;
+    newSessionEl.onclick = () => loadSession(sessionData.session_id);
+    
+    // Remove active class from others
+    document.querySelectorAll('.session-item').forEach(el => el.classList.remove('active'));
+    
+    // Prepend to top of list
+    sessionsList.insertBefore(newSessionEl, sessionsList.firstChild);
+    
+    loadingMsgEl.innerHTML = `<div class="message-content" style="color: #888;">⏳ Sending...</div>`;
+    
+    // Send message
+    const msgRes = await fetch(`/api/chatbot/sessions/${currentSessionId}/message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message })
+    });
+    
+    const msgData = await msgRes.json();
+    loadingMsgEl.remove();
+    
+    if (msgData.error) {
+      const errEl = document.createElement('div');
+      errEl.className = 'message assistant';
+      errEl.innerHTML = `<div class="message-content" style="color: #f87171;">Error: ${escapeHtml(msgData.error)}</div>`;
+      messagesDiv.appendChild(errEl);
+      return;
+    }
+    
+    // Show bot response
+    const botMsgEl = document.createElement('div');
+    botMsgEl.className = 'message assistant';
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content markdown-content';
+    if (window.marked) {
+      contentDiv.innerHTML = marked.parse(msgData.response);
+    } else {
+      contentDiv.textContent = msgData.response;
+    }
+    botMsgEl.appendChild(contentDiv);
+    
+    // Show guardrail info
+    if (msgData.guardrail_info || msgData.search_results) {
+      const infoDiv = document.createElement('div');
+      infoDiv.className = 'message-info-accordion';
+      infoDiv.innerHTML = `
+        <button class="info-toggle" onclick="toggleMessageInfo(this)">▶ Details</button>
+        <div class="info-content" style="display: none;">
+          ${msgData.guardrail_info ? `<div><strong>Guardrails:</strong> ${escapeHtml(msgData.guardrail_info)}</div>` : ''}
+          ${msgData.search_results ? `<div><strong>Search Results:</strong><pre>${escapeHtml(msgData.search_results)}</pre></div>` : ''}
+        </div>
+      `;
+      botMsgEl.appendChild(infoDiv);
+    }
+    
+    messagesDiv.appendChild(botMsgEl);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    
+    // Enable input
+    input.disabled = false;
+    input.focus();
+    
+    btn.disabled = false;
+    btn.textContent = 'Send';
+    
   } catch (err) {
     console.error(err);
-    alert('Error creating chat');
+    loadingMsgEl.innerHTML = `<div class="message-content" style="color: #f87171;">Error creating chat</div>`;
+    btn.disabled = false;
+    btn.textContent = 'Start Chat';
   }
 }
 
-// Check if we just created a session and need to send first message
-function autoSendFirstMessage() {
+// Check if we just created a session and need to prefill message
+function autofillFirstMessage() {
   const msg = localStorage.getItem('chatbot_first_message');
   if (msg && currentSessionId) {
     localStorage.removeItem('chatbot_first_message');
     const input = document.getElementById('message-input');
     if (input) {
       input.value = msg;
-      setTimeout(() => {
-        document.getElementById('chat-form').dispatchEvent(new Event('submit'));
-      }, 100);
+      input.focus();
     }
   }
 }
@@ -670,6 +1103,22 @@ function escapeHtml(text) {
     "'": '&#039;'
   };
   return text.replace(/[&<>"']/g, m => map[m]);
+}
+
+function toggleGuardrails() {
+  const details = document.getElementById('guardrails-details');
+  const icon = document.getElementById('toggle-icon');
+  const isOpen = details.style.display !== 'none';
+  details.style.display = isOpen ? 'none' : 'block';
+  icon.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(90deg)';
+}
+
+function toggleMessageInfo(btn) {
+  const content = btn.nextElementSibling;
+  const icon = btn.querySelector('span') || btn.textContent[0];
+  const isOpen = content.style.display !== 'none';
+  content.style.display = isOpen ? 'none' : 'block';
+  btn.textContent = (isOpen ? '▶' : '▼') + btn.textContent.slice(1);
 }
 
 function toggleChatbotSidebar() {
@@ -711,8 +1160,9 @@ document.getElementById('delete-session-btn')?.addEventListener('click', deleteS
 // Initial load
 loadSessions();
 if (currentSessionId) {
+  if (messageInput) messageInput.disabled = true;
   loadMessages();
-  autoSendFirstMessage();
+  autofillFirstMessage();
 }
 </script>
 {% endblock %}
