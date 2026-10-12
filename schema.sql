@@ -84,3 +84,25 @@ CREATE TABLE bg_logs (
     message   TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE chatbot_sessions (
+    id          BIGSERIAL PRIMARY KEY,
+    owner       UUID REFERENCES users(id) ON DELETE CASCADE,
+    title       TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE chatbot_messages (
+    id          BIGSERIAL PRIMARY KEY,
+    session_id  BIGINT NOT NULL REFERENCES chatbot_sessions(id) ON DELETE CASCADE,
+    role        TEXT NOT NULL,
+    content     TEXT NOT NULL,
+    search_query TEXT,
+    search_results TEXT,
+    guardrail_info TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX chatbot_sessions_owner_idx ON chatbot_sessions(owner);
+CREATE INDEX chatbot_messages_session_idx ON chatbot_messages(session_id);

@@ -657,3 +657,97 @@ def get_bg_logs(conn, task_key: str, limit: int = 100) -> list[Row]:
         "SELECT message, created_at FROM bg_logs WHERE task_key = %s ORDER BY created_at DESC LIMIT %s",
         (task_key, limit),
     ).fetchall()
+
+
+# --------------------------------------------------------------------------
+# Chatbot sessions and messages
+# --------------------------------------------------------------------------
+def create_chatbot_session(conn, owner_id: str, title: str | None = None) -> int:
+    """Create a new chatbot session. Returns session_id."""
+    row = conn.execute(
+        """INSERT INTO chatbot_sessions (owner, title, created_at, updated_at)
+           VALUES (%s, %s, now(), now())
+           RETURNING id""",
+        (owner_id, title or "New chat"),
+    ).fetchone()
+    return row["id"]
+
+
+def list_chatbot_sessions(conn, owner_id: str, limit: int = 50) -> list[Row]:
+    """List all chatbot sessions for a user, newest first."""
+    return conn.execute(
+        """SELECT id, title, created_at, updated_at
+           FROM chatbot_sessions
+           WHERE owner = %s
+           ORDER BY updated_at DESC LIMIT %s""",
+        (owner_id, limit),
+    ).fetchall()
+
+
+def get_chatbot_session(conn, session_id: int, owner_id: str) -> Row | None:
+    """Get session details. Verifies ownership."""
+    return conn.execute(
+        """SELECT id, title, created_at, updated_at
+           FROM chatbot_sessions
+           WHERE id = %s AND owner = %s""",
+        (session_id, owner_id),
+    ).fetchone()
+
+
+def delete_chatbot_session(conn, session_id: int, owner_id: str) -> bool:
+    """Delete a session and all its messages. Returns True if deleted."""
+    cur = conn.execute(
+        """DELETE FROM chatbot_sessions
+           WHERE id = %s AND owner = %s""",
+        (session_id, owner_id),
+    )
+    return cur.rowcount > 0
+
+
+def save_chatbot_message(
+    conn,
+    session_id: int,
+    role: str,
+    content: str,
+    search_query: str | None = None,
+    search_results: str | None = None,
+    guardrail_info: str | None = None,
+) -> int:
+    """Save a message to a session. Returns message_id."""
+    row = conn.execute(
+        """INSERT INTO chatbot_messages
+           (session_id, role, content, search_query, search_results, guardrail_info, created_at)
+           VALUES (%s, %s, %s, %s, %s, %s, now())
+           RETURNING id""",
+        (session_id, role, content, search_query, search_results, guardrail_info),
+    ).fetchone()
+    # Update session's updated_at
+    conn.execute(
+        "UPDATE chatbot_sessions SET updated_at = now() WHERE id = %s",
+        (session_id,),
+    )
+    return row["id"]
+
+
+def get_chatbot_messages(conn, session_id: int, owner_id: str) -> list[Row]:
+    """Get all messages for a session, in order. Verifies ownership."""
+    return conn.execute(
+        """SELECT m.id, m.role, m.content, m.search_query, m.search_results,
+                  m.guardrail_info, m.created_at
+           FROM chatbot_messages m
+           JOIN chatbot_sessions s ON s.id = m.session_id
+           WHERE m.session_id = %s AND s.owner = %s
+           ORDER BY m.created_at ASC""",
+        (session_id, owner_id),
+    ).fetchall()
+
+
+def update_chatbot_session_title(conn, session_id: int, owner_id: str, title: str) -> bool:
+    """Update session title. Returns True if updated."""
+    cur = conn.execute(
+        """UPDATE chatbot_sessions
+           SET title = %s, updated_at = now()
+           WHERE id = %s AND owner = %s""",
+        (title, session_id, owner_id),
+    )
+    return cur.rowcount > 0

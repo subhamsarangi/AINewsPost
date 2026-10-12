@@ -535,6 +535,188 @@ async def star_item(
     return {"starred": new_state}
 
 
+# ============ CHATBOT ============
+
+
+@app.get("/chatbot", response_class=HTMLResponse)
+async def chatbot_page(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    session: Optional[int] = None,
+):
+    """Chatbot UI page."""
+    current_session = None
+    if session:
+        try:
+            with db.connect() as conn:
+                current_session = db.get_chatbot_session(conn, session, current_user["user_id"])
+        except Exception:
+            pass
+    
+    return HTMLResponse(
+        render(
+            "chatbot.html",
+            user_email=current_user["user_email"],
+            current_session=current_session,
+            has_session=current_session is not None,
+        )
+    )
+
+
+@app.post("/api/chatbot/sessions")
+async def create_chatbot_session_api(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    """Create a new chatbot session."""
+    try:
+        data = await request.json()
+        title = data.get("title", "New chat")
+        
+        with db.connect() as conn:
+            session_id = db.create_chatbot_session(conn, current_user["user_id"], title)
+            conn.commit()
+        
+        return {"session_id": session_id}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e), "session_id": None}
+
+
+@app.get("/api/chatbot/sessions")
+async def list_chatbot_sessions_api(
+    current_user: dict = Depends(get_current_user),
+):
+    """List all chatbot sessions for current user."""
+    try:
+        with db.connect() as conn:
+            sessions = db.list_chatbot_sessions(conn, current_user["user_id"])
+        
+        return {
+            "sessions": [dict(s) for s in sessions]
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"sessions": [], "error": str(e)}
+
+
+@app.get("/api/chatbot/sessions/{session_id}/messages")
+async def get_chatbot_messages_api(
+    session_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    """Get all messages for a session."""
+    try:
+        with db.connect() as conn:
+            session = db.get_chatbot_session(conn, session_id, current_user["user_id"])
+            if not session:
+                return {"messages": [], "error": "Session not found"}
+            
+            messages = db.get_chatbot_messages(conn, session_id, current_user["user_id"])
+        
+        return {
+            "messages": [dict(m) for m in messages]
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"messages": [], "error": str(e)}
+
+
+@app.post("/api/chatbot/sessions/{session_id}/message")
+async def send_chatbot_message(
+    session_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    """Send a message and get a response."""
+    try:
+        from digest import chatbot
+        
+        data = await request.json()
+        user_message = data.get("message", "").strip()
+        
+        if not user_message:
+            return {"error": "Empty message", "response": "", "search_query": None, "search_results": None, "guardrail_verdict": "error", "guardrail_reason": ""}
+        
+        with db.connect() as conn:
+            session = db.get_chatbot_session(conn, session_id, current_user["user_id"])
+            if not session:
+                return {"error": "Session not found", "response": "", "search_query": None, "search_results": None, "guardrail_verdict": "error", "guardrail_reason": ""}
+        
+        # Get bot response
+        try:
+            response_data = await chatbot.chat(user_message)
+        except Exception as chat_err:
+            response = f"Error processing message: {str(chat_err)[:100]}"
+            return {
+                "response": response,
+                "search_query": None,
+                "search_results": None,
+                "guardrail_verdict": "error",
+                "guardrail_reason": str(chat_err)[:200],
+            }
+        
+        # Save messages to DB
+        try:
+            with db.connect() as conn:
+                db.save_chatbot_message(
+                    conn,
+                    session_id,
+                    "user",
+                    user_message,
+                    search_query=response_data.get("search_query"),
+                )
+                db.save_chatbot_message(
+                    conn,
+                    session_id,
+                    "assistant",
+                    response_data["response"],
+                    search_query=response_data.get("search_query"),
+                    search_results=response_data.get("search_results"),
+                    guardrail_info=f"{response_data.get('guardrail_verdict')}: {response_data.get('guardrail_reason')}",
+                )
+                conn.commit()
+        except Exception as db_err:
+            import traceback
+            traceback.print_exc()
+            return {
+                "response": response_data["response"],
+                "search_query": response_data.get("search_query"),
+                "search_results": response_data.get("search_results"),
+                "guardrail_verdict": response_data.get("guardrail_verdict"),
+                "guardrail_reason": f"DB save failed: {str(db_err)[:100]}",
+            }
+        
+        return response_data
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e), "response": "", "search_query": None, "search_results": None, "guardrail_verdict": "error", "guardrail_reason": str(e)[:200]}
+
+
+@app.delete("/api/chatbot/sessions/{session_id}")
+async def delete_chatbot_session_api(
+    session_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    """Delete a chatbot session."""
+    try:
+        with db.connect() as conn:
+            success = db.delete_chatbot_session(conn, session_id, current_user["user_id"])
+            if not success:
+                return {"error": "Session not found", "status": "failed"}
+            conn.commit()
+        
+        return {"status": "deleted"}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e), "status": "failed"}
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
