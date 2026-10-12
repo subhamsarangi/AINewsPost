@@ -17,7 +17,6 @@ import datetime
 load_dotenv()
 
 MODEL = os.getenv("CHAT_MODEL", "gpt-4o-mini")
-TODAY = datetime.date.today().isoformat()
 DEBUG = os.getenv("DEBUG_GUARDRAILS") == "1"
 
 ALLOWED_TOPICS = (
@@ -77,10 +76,18 @@ def mask_pii(text: str, include_person: bool = True) -> str:
 # --------------------------------------------------------------------------
 # Policy classification
 # --------------------------------------------------------------------------
-history: list[dict] = []
 _pending: dict = {}
 
-CLASSIFIER_PROMPT = f"""You analyse a piece of text for a chatbot policy check.
+# Thread-local storage for session history during request
+import threading
+_local = threading.local()
+
+
+def _get_history() -> list[dict]:
+    """Get current request's history from thread-local storage."""
+    return getattr(_local, 'history', [])
+
+CLASSIFIER_PROMPT_TEMPLATE = """You analyse a piece of text for a chatbot policy check.
 Reply with JSON only, with exactly these fields:
 {{
   "about_meta": true/false,
@@ -103,7 +110,7 @@ TikTok, X/Twitter, NASA, etc.) are NOT Meta, even if they are social media or
 big tech.
 
 involves_allowed_topic: true if the text touches ANY of these topics, in any
-context, about any organization, site or product: {ALLOWED_TOPICS}.
+context, about any organization, site or product: {{allowed_topics}}.
 The subject being asked about does not matter. "What LLMs does <some company or
 site> use?" involves the topic "llm" so it is true. Ignore unrelated personal
 details in the message (usernames, names, small talk) and judge the actual question.
@@ -120,7 +127,7 @@ models, benchmarks, rankings, releases, announcements, prices, or how a specific
 organization uses AI. Use the earlier messages to make follow-ups standalone.
 Keep it under 12 words. Never put Meta-related names in the query (Llama,
 Facebook, etc.), even if the user mentions them; leave them out. Today's date is
-{TODAY}; include the year when recency matters.
+{{today}}; include the year when recency matters.
 
 Examples:
 - "my username is bob and what agents does reddit use?" -> about_meta false, involves_allowed_topic true
@@ -131,16 +138,20 @@ Examples:
 """
 
 
-async def llm_classify(text: str, stage: str) -> dict:
+async def llm_classify(text: str, stage: str, today: str, allowed_topics: str) -> dict:
     """Classify user text with LLM."""
+    history = _get_history()
     prior = [m for m in history[:-1] if m["role"] == "user"][-3:] if stage == "input" else []
     context = "\n".join(f"- {m['content']}" for m in prior) or "(none)"
     client = AsyncOpenAI()
+    
+    prompt = CLASSIFIER_PROMPT_TEMPLATE.format(today=today, allowed_topics=allowed_topics)
+    
     resp = await client.chat.completions.create(
         model=MODEL,
         response_format={"type": "json_object"},
         messages=[
-            {"role": "system", "content": CLASSIFIER_PROMPT},
+            {"role": "system", "content": prompt},
             {
                 "role": "user",
                 "content": f"Earlier user messages:\n{context}\n\nTEXT:\n{text}",
@@ -150,10 +161,16 @@ async def llm_classify(text: str, stage: str) -> dict:
     return json.loads(resp.choices[0].message.content)
 
 
-async def policy_verdict(text: str, stage: str) -> tuple[str, str]:
+async def policy_verdict(text: str, stage: str, today: str = None, allowed_topics: str = None) -> tuple[str, str]:
     """Return (verdict, reason). Verdict: 'ok', 'off_topic', or 'restricted'."""
+    # Use current date if not provided
+    if today is None:
+        today = datetime.date.today().isoformat()
+    if allowed_topics is None:
+        allowed_topics = ALLOWED_TOPICS
+        
     try:
-        r = await llm_classify(text, stage)
+        r = await llm_classify(text, stage, today, allowed_topics)
         if r.get("about_meta"):
             verdict = "restricted"
         elif (
@@ -228,7 +245,7 @@ async def web_search() -> str:
 # --------------------------------------------------------------------------
 # NeMo Guardrails config
 # --------------------------------------------------------------------------
-YAML_CONFIG = f"""
+YAML_CONFIG_TEMPLATE = """
 models:
   - type: main
     engine: openai
@@ -244,6 +261,10 @@ instructions:
       colleague. You are an AI, never claim to be human.
       Only introduce yourself as Neil when greeted or asked who you are. Never
       start a reply with your name.
+      
+      You HAVE web search capabilities. When you receive fresh search results
+      below, use them to answer questions about recent events, new releases,
+      or current information. Never say you can't search or can't access the web.
 
       Style rules (important):
       - Be brief. Default to 1-4 sentences.
@@ -321,8 +342,12 @@ rails.register_action(policy_verdict, "policy_verdict")
 rails.register_action(web_search, "web_search")
 
 
-async def chat(user_message: str) -> dict:
+async def chat(user_message: str, session_history: list[dict] | None = None) -> dict:
     """Process a user message and return bot response with metadata.
+    
+    Args:
+        user_message: User input text
+        session_history: Previous messages in session [{"role": "user"|"assistant", "content": "..."}]
     
     Returns:
         {
@@ -333,10 +358,20 @@ async def chat(user_message: str) -> dict:
             "guardrail_reason": str,
         }
     """
-    global history, _pending
+    global _pending
     
-    # Recreate rails fresh each call
-    config = RailsConfig.from_content(colang_content=COLANG_CONFIG, yaml_content=YAML_CONFIG)
+    # Use session history or empty
+    history = session_history.copy() if session_history else []
+    
+    # Store in thread-local for policy_verdict access
+    _local.history = history
+    
+    # Get current date for this request
+    today = datetime.date.today().isoformat()
+    
+    # Recreate rails fresh each call with current date
+    yaml_config = YAML_CONFIG_TEMPLATE.format(MODEL=MODEL, TODAY=today, ALLOWED_TOPICS=ALLOWED_TOPICS)
+    config = RailsConfig.from_content(colang_content=COLANG_CONFIG, yaml_content=yaml_config)
     rails = LLMRails(config)
     rails.register_action(policy_verdict, "policy_verdict")
     rails.register_action(web_search, "web_search")
@@ -352,6 +387,10 @@ async def chat(user_message: str) -> dict:
     # Run guardrails and get response
     response = await rails.generate_async(messages=history)
     reply = mask_pii(response["content"], include_person=False)
+    
+    if DEBUG:
+        print(f"  [response] {reply[:200]}...")
+        print(f"  [pending] query={_pending.get('query')}, results_len={len(_pending.get('results', ''))}")
     
     history.append({"role": "assistant", "content": reply})
     

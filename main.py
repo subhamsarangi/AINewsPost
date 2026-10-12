@@ -645,10 +645,14 @@ async def send_chatbot_message(
             session = db.get_chatbot_session(conn, session_id, current_user["user_id"])
             if not session:
                 return {"error": "Session not found", "response": "", "search_query": None, "search_results": None, "guardrail_verdict": "error", "guardrail_reason": ""}
+            
+            # Load existing messages to build history
+            messages = db.get_chatbot_messages(conn, session_id, current_user["user_id"])
+            history = [{"role": msg["role"], "content": msg["content"]} for msg in messages]
         
-        # Get bot response
+        # Get bot response with session history
         try:
-            response_data = await chatbot.chat(user_message)
+            response_data = await chatbot.chat(user_message, session_history=history)
         except Exception as chat_err:
             response = f"Error processing message: {str(chat_err)[:100]}"
             return {

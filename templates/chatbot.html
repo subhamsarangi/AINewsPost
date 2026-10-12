@@ -733,8 +733,19 @@ async function loadMessages() {
           msgEl.appendChild(infoDiv);
         }
       } else {
-        // Plain text for user messages
-        msgEl.innerHTML = `<div class="message-content">${escapeHtml(msg.content)}</div>`;
+        // Render markdown for user messages too
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content markdown-content';
+        try {
+          if (window.marked) {
+            contentDiv.innerHTML = marked.parse(msg.content);
+          } else {
+            contentDiv.textContent = msg.content;
+          }
+        } catch (e) {
+          contentDiv.textContent = msg.content;
+        }
+        msgEl.appendChild(contentDiv);
       }
       
       messagesDiv.appendChild(msgEl);
@@ -768,10 +779,18 @@ async function sendMessage(e) {
   const btn = e.target.querySelector('button[type="submit"]');
   
   // Show user message immediately
+  // Show user message immediately
   const messagesDiv = document.getElementById('chat-messages');
   const userMsgEl = document.createElement('div');
   userMsgEl.className = 'message user';
-  userMsgEl.innerHTML = `<div class="message-content">${escapeHtml(message)}</div>`;
+  const userContentDiv = document.createElement('div');
+  userContentDiv.className = 'message-content markdown-content';
+  if (window.marked) {
+    userContentDiv.innerHTML = marked.parse(message);
+  } else {
+    userContentDiv.textContent = message;
+  }
+  userMsgEl.appendChild(userContentDiv);
   messagesDiv.appendChild(userMsgEl);
   
   // Clear input immediately
@@ -894,7 +913,14 @@ async function createSessionAndSend(e) {
   
   const userMsgEl = document.createElement('div');
   userMsgEl.className = 'message user';
-  userMsgEl.innerHTML = `<div class="message-content">${escapeHtml(message)}</div>`;
+  const userContentDiv = document.createElement('div');
+  userContentDiv.className = 'message-content markdown-content';
+  if (window.marked) {
+    userContentDiv.innerHTML = marked.parse(message);
+  } else {
+    userContentDiv.textContent = message;
+  }
+  userMsgEl.appendChild(userContentDiv);
   messagesDiv.appendChild(userMsgEl);
   
   // Show loading
