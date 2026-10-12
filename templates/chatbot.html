@@ -11,6 +11,7 @@
   line-height: 1.6;
   white-space: pre-wrap;
   word-wrap: break-word;
+  margin-bottom: 1em;
 }
 .markdown-content h1, .markdown-content h2, .markdown-content h3 {
   margin: 0.75rem 0 0.5rem 0;
@@ -120,6 +121,8 @@
 }
 
 .info-content pre {
+  white-space: pre-wrap;
+  word-break: break-word;
   background: #0a0a0a;
   padding: 0.35rem;
   border-radius: 2px;
@@ -658,16 +661,25 @@ async function loadMessages() {
         msgEl.appendChild(contentDiv);
         
         // Show guardrail info if present
-        if (msg.guardrail_info || msg.search_results) {
+        if (msg.guardrail_info || msg.search_query || msg.search_results) {
           const infoDiv = document.createElement('div');
           infoDiv.className = 'message-info-accordion';
-          infoDiv.innerHTML = `
-            <button class="info-toggle" onclick="toggleMessageInfo(this)">▶ Details</button>
-            <div class="info-content" style="display: none;">
-              ${msg.guardrail_info ? `<div><strong>Guardrails:</strong> ${escapeHtml(msg.guardrail_info)}</div>` : ''}
-              ${msg.search_results ? `<div><strong>Search Results:</strong><pre>${escapeHtml(msg.search_results)}</pre></div>` : ''}
-            </div>
-          `;
+          let infoHTML = '<button class="info-toggle" onclick="toggleMessageInfo(this)">▶ Details</button><div class="info-content" style="display: none;">';
+          
+          if (msg.guardrail_info) {
+            infoHTML += `<div><strong>Guardrails:</strong> ${escapeHtml(msg.guardrail_info)}</div>`;
+          }
+          
+          if (msg.search_query) {
+            infoHTML += `<div style="margin-top: 0.5rem;"><strong>Search Query:</strong> ${escapeHtml(msg.search_query)}</div>`;
+          }
+          
+          if (msg.search_results) {
+            infoHTML += `<div style="margin-top: 0.5rem;"><strong>Search Results:</strong><pre style="white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word;">${escapeHtml(msg.search_results)}</pre></div>`;
+          }
+          
+          infoHTML += '</div>';
+          infoDiv.innerHTML = infoHTML;
           msgEl.appendChild(infoDiv);
         }
       } else {
@@ -798,16 +810,15 @@ async function sendMessage(e) {
       infoDiv.className = 'message-info-accordion';
       let infoHTML = '<button class="info-toggle" onclick="toggleMessageInfo(this)">▶ Details</button><div class="info-content" style="display: none;">';
       
-      if (data.guardrail_verdict !== 'ok') {
-        infoHTML += `<div><strong>Guardrails:</strong> ${escapeHtml(data.guardrail_verdict)}: ${escapeHtml(data.guardrail_reason || '')}</div>`;
-      }
+      // Always show guardrails verdict
+      infoHTML += `<div><strong>Guardrails:</strong> ${escapeHtml(data.guardrail_verdict)}${data.guardrail_reason ? ': ' + escapeHtml(data.guardrail_reason) : ''}</div>`;
       
       if (data.search_query) {
         infoHTML += `<div style="margin-top: 0.5rem;"><strong>Search Query:</strong> ${escapeHtml(data.search_query)}</div>`;
       }
       
       if (data.search_results) {
-        infoHTML += `<div style="margin-top: 0.5rem;"><strong>Search Results:</strong><pre style="font-size: 0.8rem; margin-top: 0.25rem;">${escapeHtml(data.search_results)}</pre></div>`;
+        infoHTML += `<div style="margin-top: 0.5rem;"><strong>Search Results:</strong><pre style="font-size: 0.8rem; margin-top: 0.25rem; white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word;">${escapeHtml(data.search_results)}</pre></div>`;
       }
       
       infoHTML += '</div>';
@@ -980,16 +991,16 @@ async function createSessionAndSend(e) {
       infoDiv.className = 'message-info-accordion';
       let infoHTML = '<button class="info-toggle" onclick="toggleMessageInfo(this)">▶ Details</button><div class="info-content" style="display: none;">';
       
-      if (msgData.guardrail_info) {
-        infoHTML += `<div><strong>Guardrails:</strong> ${escapeHtml(msgData.guardrail_info)}</div>`;
-      }
+      // Always show guardrails verdict (extract from guardrail_info or use defaults)
+      const guardrailVerdict = msgData.guardrail_info || 'ok';
+      infoHTML += `<div><strong>Guardrails:</strong> ${escapeHtml(guardrailVerdict)}</div>`;
       
       if (msgData.search_query) {
         infoHTML += `<div style="margin-top: 0.5rem;"><strong>Search Query:</strong> ${escapeHtml(msgData.search_query)}</div>`;
       }
       
       if (msgData.search_results) {
-        infoHTML += `<div style="margin-top: 0.5rem;"><strong>Search Results:</strong><pre style="font-size: 0.8rem; margin-top: 0.25rem;">${escapeHtml(msgData.search_results)}</pre></div>`;
+        infoHTML += `<div style="margin-top: 0.5rem;"><strong>Search Results:</strong><pre style="font-size: 0.8rem; margin-top: 0.25rem; white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word;">${escapeHtml(msgData.search_results)}</pre></div>`;
       }
       
       infoHTML += '</div>';
