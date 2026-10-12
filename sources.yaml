@@ -70,15 +70,15 @@ sources:
       title: "h2, h3"
       date: "a.badge"
 
-  - id: techgig_et
-    name: TechGig ET Newsletter
-    type: scrape
-    category: news
-    url: https://techgig.com/etnewsletter.php
-    default_sort: date
-    selectors:
-      item: 'td[style*="dashed"]'
-      link: a
-      title: a
-      link_param: url
-      date_param: dt
+  # - id: techgig_et
+  #   name: TechGig ET Newsletter
+  #   type: scrape
+  #   category: news
+  #   url: https://techgig.com/etnewsletter.php
+  #   default_sort: date
+  #   selectors:
+  #     item: 'td[style*="dashed"]'
+  #     link: a
+  #     title: a
+  #     link_param: url
+  #     date_param: dt

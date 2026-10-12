@@ -5,7 +5,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import FastAPI, Depends, HTTPException, Form, Request
+from fastapi import FastAPI, Depends, HTTPException, Form, Request, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader
@@ -402,27 +402,118 @@ async def rebuild_digest_pdf(
 @app.post("/api/digest/{digest_date}/generate")
 async def generate_digest(
     digest_date: str,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
 ):
-    """Generate a new digest for a date (runs pipeline)."""
+    """Generate digest in background (returns immediately)."""
     try:
         from digest import pipeline
+        import asyncio
+        import json
         
         digest_obj_date = datetime.fromisoformat(digest_date).date()
+        task_key = f"digest_gen_{digest_obj_date}"
         
-        # Run pipeline for this date
-        result = await pipeline.run(force=True, today=digest_obj_date)
+        def run_pipeline():
+            import logging
+            log = logging.getLogger("bg_pipeline")
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                log.info(f"[BG] Starting pipeline for {digest_obj_date}")
+                with db.connect() as conn:
+                    db.add_bg_log(conn, task_key, f"Starting pipeline for {digest_obj_date}")
+                    conn.commit()
+                result = loop.run_until_complete(pipeline.run(force=True, today=digest_obj_date, task_key=task_key))
+                log.info(f"[BG] Pipeline done, writing to DB: {result}")
+                with db.connect() as conn:
+                    db.add_bg_log(conn, task_key, f"Pipeline complete")
+                    db.record_bg_task(conn, task_key, "done", result=result)
+                    conn.commit()
+                log.info(f"[BG] Task recorded in DB")
+            except Exception as e:
+                import traceback
+                log.error(f"[BG] Pipeline failed: {e}")
+                traceback.print_exc()
+                try:
+                    with db.connect() as conn:
+                        db.add_bg_log(conn, task_key, f"ERROR: {str(e)}")
+                        db.record_bg_task(conn, task_key, "error", error=str(e))
+                        conn.commit()
+                except Exception as db_err:
+                    log.error(f"[BG] Failed to record error: {db_err}")
+            finally:
+                loop.close()
         
-        if result.get("pdf"):
-            return {"status": "ok", "pdf_path": result["pdf"], "message": f"Generated digest for {digest_obj_date}"}
-        else:
-            return {"status": "error", "message": result.get("note", "Failed to generate digest")}
+        try:
+            with db.connect() as conn:
+                db.record_bg_task(conn, task_key, "generating")
+                conn.commit()
+            print(f"✓ Task row created: {task_key}")
+        except Exception as e:
+            print(f"✗ Failed to create task row: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"status": "error", "message": f"Failed to record task: {str(e)}"}
+        
+        background_tasks.add_task(run_pipeline)
+        return {"status": "generating", "message": "Digest generation started"}
     except Exception as e:
         import traceback
         traceback.print_exc()
         return {"status": "error", "message": str(e)}
 
 
+@app.get("/api/digest/{digest_date}/logs")
+async def digest_logs(
+    digest_date: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Get logs for digest generation task."""
+    digest_obj_date = datetime.fromisoformat(digest_date).date()
+    task_key = f"digest_gen_{digest_obj_date}"
+    
+    with db.connect() as conn:
+        logs = db.get_bg_logs(conn, task_key, limit=100)
+    
+    return {"logs": [{"message": log["message"], "time": log["created_at"].isoformat()} for log in logs]}
+
+
+@app.get("/api/digest/{digest_date}/status")
+async def digest_status(
+    digest_date: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Check if digest generation is still running."""
+    import json
+    
+    digest_obj_date = datetime.fromisoformat(digest_date).date()
+    task_key = f"digest_gen_{digest_obj_date}"
+    
+    with db.connect() as conn:
+        task = db.get_bg_task(conn, task_key)
+        if task:
+            status = task["status"]
+            if status == "done":
+                result = task["result"] if isinstance(task["result"], dict) else json.loads(task["result"]) if task["result"] else {}
+                if result.get("pdf"):
+                    return {"status": "done", "pdf_path": result["pdf"]}
+                else:
+                    return {"status": "no_items", "message": result.get("note", "No items to digest")}
+            elif status == "error":
+                return {"status": "error", "message": task["error"]}
+            else:
+                return {"status": status}
+        
+        # Check if digest exists in DB
+        digest = db.get_digest(conn, digest_obj_date)
+        if digest:
+            return {"status": "done", "pdf_path": digest["pdf_path"]}
+    
+    return {"status": "none"}
+
+
+@app.post("/api/star/{item_id}")
 async def star_item(
     item_id: str,
     current_user: dict = Depends(get_current_user),

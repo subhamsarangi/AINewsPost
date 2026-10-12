@@ -98,14 +98,127 @@
     {% if item.content %}
     <div class="bg-gray-800 rounded-lg shadow p-8 border border-gray-700">
         <h2 class="text-2xl font-semibold text-white mb-4">Full text</h2>
-        <div class="text-gray-300 space-y-3 prose-serif">
-            {% for para in item.content.split('\n') %}
-                {% if para.strip() %}
-                <p>{{ para.strip() }}</p>
-                {% endif %}
-            {% endfor %}
+        <div class="text-gray-300 space-y-3 prose-serif" id="contentArea">
+            <!-- Will be populated by JS -->
         </div>
     </div>
+    <script>
+        // Parse markdown tables and render as HTML
+        function renderContent() {
+            const content = `{{ item.content }}`;
+            const contentArea = document.getElementById('contentArea');
+            const lines = content.split('\n');
+            let html = '';
+            let inTable = false;
+            let inCodeBlock = false;
+            let tableLines = [];
+            let codeLines = [];
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const trimmed = line.trim();
+                
+                // Check for code block markers
+                if (trimmed.startsWith('```')) {
+                    if (!inCodeBlock) {
+                        inCodeBlock = true;
+                        codeLines = [];
+                        // Extract language if present
+                        const lang = trimmed.substring(3).trim();
+                        codeLines.lang = lang;
+                    } else {
+                        // End code block
+                        html += renderCodeBlock(codeLines, codeLines.lang);
+                        codeLines = [];
+                        inCodeBlock = false;
+                    }
+                    continue;
+                }
+                
+                if (inCodeBlock) {
+                    codeLines.push(line);
+                    continue;
+                }
+                
+                // Check if line is a markdown table
+                if (trimmed.includes('|')) {
+                    if (!inTable) {
+                        inTable = true;
+                        tableLines = [];
+                    }
+                    tableLines.push(trimmed);
+                } else {
+                    // End of table
+                    if (inTable && tableLines.length > 0) {
+                        html += renderTable(tableLines);
+                        tableLines = [];
+                        inTable = false;
+                    }
+                    // Regular paragraph
+                    if (trimmed) {
+                        html += `<p>${escapeHtml(trimmed)}</p>`;
+                    }
+                }
+            }
+            
+            // Handle leftover code block
+            if (inCodeBlock && codeLines.length > 0) {
+                html += renderCodeBlock(codeLines, codeLines.lang);
+            }
+            
+            // Handle leftover table
+            if (inTable && tableLines.length > 0) {
+                html += renderTable(tableLines);
+            }
+            
+            contentArea.innerHTML = html;
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function renderCodeBlock(lines, lang = '') {
+            const code = lines.join('\n').trim();
+            const langClass = lang ? ` language-${lang}` : '';
+            return `<pre class="bg-gray-950 rounded p-4 overflow-x-auto my-4 border border-gray-700"><code class="text-gray-200 text-sm font-mono${langClass}">${escapeHtml(code)}</code></pre>`;
+        }
+        
+        function renderTable(lines) {
+            if (lines.length < 2) return '';
+            
+            // Parse header
+            const headerCells = lines[0].split('|').map(c => c.trim()).filter(c => c);
+            
+            // Skip separator line
+            // Parse body
+            const bodyRows = lines.slice(2).map(line => {
+                return line.split('|').map(c => c.trim()).filter(c => c);
+            }).filter(row => row.length === headerCells.length);
+            
+            let table = '<table class="w-full border-collapse border border-gray-600 my-4"><thead><tr class="bg-gray-700">';
+            headerCells.forEach(cell => {
+                table += `<th class="border border-gray-600 px-3 py-2 text-left">${cell}</th>`;
+            });
+            table += '</tr></thead><tbody>';
+            
+            bodyRows.forEach((row, idx) => {
+                const bgClass = idx % 2 === 0 ? 'bg-gray-750' : 'bg-gray-800';
+                table += `<tr class="${bgClass}">`;
+                row.forEach(cell => {
+                    table += `<td class="border border-gray-600 px-3 py-2">${cell}</td>`;
+                });
+                table += '</tr>';
+            });
+            
+            table += '</tbody></table>';
+            return table;
+        }
+        
+        renderContent();
+    </script>
     {% else %}
     <div class="bg-blue-900 border border-blue-700 text-blue-200 px-6 py-4 rounded">
         Full text was not available (page blocked or not extractable).

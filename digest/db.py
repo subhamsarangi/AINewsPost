@@ -197,14 +197,20 @@ def _np(v) -> np.ndarray | None:
 def sync_sources(conn, sources: list[dict], owner_id: str | None = None) -> None:
     """Mirror sources.yaml into the sources table (yaml stays the truth)."""
     for s in sources:
-        conn.execute(
-            """INSERT INTO sources (id, name, type, category, owner)
-               VALUES (%s, %s, %s, %s, %s)
-               ON CONFLICT (id) DO UPDATE
-               SET name = EXCLUDED.name, type = EXCLUDED.type,
-                   category = EXCLUDED.category""",
-            (s["id"], s["name"], s["type"], s.get("category"), owner_id),
-        )
+        try:
+            conn.execute(
+                """INSERT INTO sources (id, name, type, category, owner)
+                   VALUES (%s, %s, %s, %s, %s)
+                   ON CONFLICT (id) DO UPDATE
+                   SET name = EXCLUDED.name, type = EXCLUDED.type,
+                       category = EXCLUDED.category""",
+                (s["id"], s["name"], s["type"], s.get("category"), owner_id),
+                prepare=False,
+            )
+        except psycopg.errors.DuplicatePreparedStatement as e:
+            log.warning(f"Prepared statement collision for source {s['id']}, closing connection")
+            conn.close()
+            raise  # Let caller handle reconnect
 
 
 def get_last_fetch(conn, source_id: str) -> datetime | None:
@@ -251,15 +257,11 @@ def _slugify(title: str) -> str:
 
 def insert_item(conn, item: dict, owner_id: str | None = None) -> int | None:
     """Insert a new item. Returns its id, or None if canonical_url exists."""
+    import uuid
+    
     title = item.get("title", "")
     slug = _slugify(title)
-    
-    # Ensure unique slug
-    existing = conn.execute(
-        "SELECT COUNT(*) as cnt FROM items WHERE slug LIKE %s", (f"{slug}%",)
-    ).fetchone()
-    if existing["cnt"] > 0:
-        slug = f"{slug}-{existing['cnt']}"
+    slug = f"{slug}-{str(uuid.uuid4())[:8]}"
     
     params = {
         "published_at": None,
@@ -271,6 +273,8 @@ def insert_item(conn, item: dict, owner_id: str | None = None) -> int | None:
         "slug": slug,
         **item,
     }
+    
+    # Use prepared=False to avoid statement cache collision
     row = conn.execute(
         """INSERT INTO items (source_id, url, canonical_url, title, published_at,
                               content, points, num_comments, hn_url, owner, slug)
@@ -280,6 +284,7 @@ def insert_item(conn, item: dict, owner_id: str | None = None) -> int | None:
            ON CONFLICT (canonical_url) DO NOTHING
            RETURNING id""",
         params,
+        prepare=False,
     ).fetchone()
     return row["id"] if row else None
 
@@ -312,7 +317,7 @@ def expire_missing_content(conn, days: int = 7) -> int:
 
 def set_content(conn, item_id: int, content: str) -> None:
     # empty string (not NULL) marks "tried, nothing extracted" so we don't retry forever
-    conn.execute("UPDATE items SET content = %s WHERE id = %s", (content, item_id))
+    conn.execute("UPDATE items SET content = %s WHERE id = %s", (content, item_id), prepare=False)
 
 
 def items_missing_embedding(conn, limit: int = 200) -> list[Row]:
@@ -353,11 +358,11 @@ def set_cluster(conn, item_id: int, cluster_id: int) -> None:
 
 
 def set_summary(conn, item_id: int, summary: str) -> None:
-    conn.execute("UPDATE items SET summary = %s WHERE id = %s", (summary, item_id))
+    conn.execute("UPDATE items SET summary = %s WHERE id = %s", (summary, item_id), prepare=False)
 
 
 def set_starred(conn, item_id: int, starred: bool) -> None:
-    conn.execute("UPDATE items SET starred = %s WHERE id = %s", (starred, item_id))
+    conn.execute("UPDATE items SET starred = %s WHERE id = %s", (starred, item_id), prepare=False)
 
 
 # --------------------------------------------------------------------------
@@ -575,11 +580,12 @@ def save_digest(conn, digest_date: date, pdf_path: str, item_ids: list[int], own
         (digest_date, pdf_path, owner_id),
     ).fetchone()
     digest_id = row["id"]
-    conn.execute("DELETE FROM digest_items WHERE digest_id = %s", (digest_id,))
+    conn.execute("DELETE FROM digest_items WHERE digest_id = %s", (digest_id,), prepare=False)
     for rank, item_id in enumerate(item_ids, start=1):
         conn.execute(
             "INSERT INTO digest_items (digest_id, item_id, rank) VALUES (%s, %s, %s)",
             (digest_id, item_id, rank),
+            prepare=False,
         )
     return digest_id
 
@@ -592,7 +598,7 @@ def get_digest(conn, digest_date: date) -> Row | None:
 
 def delete_digest(conn, digest_date: date) -> None:
     """Remove a day's digest and its item links (cascade). The PDF file stays."""
-    conn.execute("DELETE FROM digests WHERE date = %s", (digest_date,))
+    conn.execute("DELETE FROM digests WHERE date = %s", (digest_date,), prepare=False)
 
 
 def list_digests(conn, limit: int = 60) -> list[Row]:
@@ -610,4 +616,44 @@ def digest_items(conn, digest_id: int) -> list[Row]:
            FROM digest_items di JOIN items i ON i.id = di.item_id
            WHERE di.digest_id = %s ORDER BY di.rank""",
         (digest_id,),
+    ).fetchall()
+
+
+# --------------------------------------------------------------------------
+# Background tasks
+# --------------------------------------------------------------------------
+def record_bg_task(conn, task_key: str, status: str, result=None, error=None) -> None:
+    """Record or update a background task status."""
+    import json
+    conn.execute(
+        """INSERT INTO bg_tasks (task_key, status, result, error, updated_at)
+           VALUES (%s, %s, %s, %s, now())
+           ON CONFLICT (task_key) DO UPDATE
+           SET status = EXCLUDED.status, result = EXCLUDED.result,
+               error = EXCLUDED.error, updated_at = now()""",
+        (task_key, status, json.dumps(result) if result else None, error),
+    )
+
+
+def get_bg_task(conn, task_key: str) -> Row | None:
+    """Get background task status."""
+    return conn.execute(
+        "SELECT status, result, error FROM bg_tasks WHERE task_key = %s",
+        (task_key,),
+    ).fetchone()
+
+
+def add_bg_log(conn, task_key: str, message: str) -> None:
+    """Log a message for a background task."""
+    conn.execute(
+        "INSERT INTO bg_logs (task_key, message) VALUES (%s, %s)",
+        (task_key, message),
+    )
+
+
+def get_bg_logs(conn, task_key: str, limit: int = 100) -> list[Row]:
+    """Get all logs for a task."""
+    return conn.execute(
+        "SELECT message, created_at FROM bg_logs WHERE task_key = %s ORDER BY created_at DESC LIMIT %s",
+        (task_key, limit),
     ).fetchall()

@@ -54,6 +54,8 @@ def _fetcher(source: dict):
 # Stage: ingest (one source failing never stops the others)
 # --------------------------------------------------------------------------
 async def _ingest_source(source: dict, admin_id: str) -> dict:
+    import asyncio
+    
     sid = source["id"]
     fetch = _fetcher(source)
     if fetch is None:
@@ -66,7 +68,11 @@ async def _ingest_source(source: dict, admin_id: str) -> dict:
     with db.connect() as conn:
         since = db.get_last_fetch(conn, sid)
     try:
-        items = await fetch(source, since)  # pure: network only, no DB
+        # Use asyncio.to_thread for sync fetchers, await for async ones
+        if asyncio.iscoroutinefunction(fetch):
+            items = await fetch(source, since)
+        else:
+            items = await asyncio.to_thread(fetch, source, since)
     except Exception as e:
         msg = f"error: {type(e).__name__}: {e}"[:300]
         log.warning("source '%s' failed: %s", sid, msg)
@@ -77,12 +83,16 @@ async def _ingest_source(source: dict, admin_id: str) -> dict:
     new = 0
     with db.connect() as conn:
         for item in items:
-            if db.insert_item(conn, item, owner_id=admin_id) is not None:
-                new += 1
-            elif item.get("points") is not None:  # known HN story: refresh counts
-                db.update_hn_stats(
-                    conn, item["canonical_url"], item["points"], item["num_comments"]
-                )
+            try:
+                if db.insert_item(conn, item, owner_id=admin_id) is not None:
+                    new += 1
+                elif item.get("points") is not None:  # known HN story: refresh counts
+                    db.update_hn_stats(
+                        conn, item["canonical_url"], item["points"], item["num_comments"]
+                    )
+            except Exception as e:
+                log.warning(f"Failed to insert item {item.get('title', '?')}: {e}")
+                conn.rollback()
         db.record_fetch(conn, sid, f"ok, {new} new of {len(items)}", len(items))
     log.info("  '%s': %d new of %d fetched", sid, new, len(items))
     return {"id": sid, "new": new, "error": None}
@@ -158,13 +168,14 @@ async def run(
     no_fetch: bool = False,
     force: bool = False,
     today: date | None = None,
+    task_key: str | None = None,
 ) -> dict:
     """One full daily run (see _run). Database trouble becomes db.DatabaseProblem
     with a message that says how to fix it; callers print it, no traceback."""
     _setup_logging()
     db.check()  # fail fast: before any network work
     try:
-        return await _run(dry_run=dry_run, no_fetch=no_fetch, force=force, today=today)
+        return await _run(dry_run=dry_run, no_fetch=no_fetch, force=force, today=today, task_key=task_key)
     except db.CONNECTION_ERRORS as e:  # connection dropped mid-run
         raise db.DatabaseProblem(db.explain(e)) from e
 
@@ -174,12 +185,14 @@ async def _run(
     no_fetch: bool = False,
     force: bool = False,
     today: date | None = None,
+    task_key: str | None = None,
 ) -> dict:
     """One full daily run.
 
     dry_run : stop after ranking (no summaries, no PDF, nothing saved). Shows picks.
     no_fetch: skip source fetching (re-process and re-rank what is in the DB).
     force   : rebuild today's digest even if one exists.
+    task_key: background task key for logging to DB.
     """
     today = today or date.today()
     result = {
@@ -189,6 +202,14 @@ async def _run(
         "pdf": None,
         "note": None,
     }
+    
+    def log_bg(msg):
+        """Log to both terminal and DB."""
+        log.info(msg)
+        if task_key:
+            with db.connect() as conn:
+                db.add_bg_log(conn, task_key, msg)
+                conn.commit()
 
     with db.connect() as conn:
         admin_id = db.ensure_admin_user(conn)
@@ -198,20 +219,20 @@ async def _run(
         result.update(
             pdf=existing["pdf_path"], note="digest for today exists (use --force)"
         )
-        log.info(result["note"])
+        log_bg(result["note"])
         return result
 
     if no_fetch:
-        log.info("[1/5] fetching skipped (--no-fetch)")
+        log_bg("[1/5] fetching skipped (--no-fetch)")
     else:
         sources = load_sources()
-        log.info("[1/5] fetching %d sources", len(sources))
+        log_bg(f"[1/5] fetching {len(sources)} sources")
         result["sources"] = await asyncio.gather(
             *[_ingest_source(s, admin_id) for s in sources]
         )
-    log.info("[2/5] extracting page text, embedding, clustering")
+    log_bg("[2/5] extracting page text, embedding, clustering")
     _process_new_items()
-    log.info("[3/5] ranking candidates")
+    log_bg("[3/5] ranking candidates")
 
     restore = None  # --force: old digest, put back on failure
     try:
@@ -231,11 +252,11 @@ async def _run(
                 }
                 for p in picks
             ]
-        log.info("  picked %d item(s)", len(picks))
+        log_bg(f"  picked {len(picks)} item(s)")
         if not picks:
             _restore(today, restore, admin_id)
             result["note"] = "nothing worth reading: no digest written"
-            log.info(result["note"])
+            log_bg(result["note"])
             return result
         if dry_run:
             result["note"] = "dry run: stopped after ranking"
@@ -246,10 +267,10 @@ async def _run(
                 "AI ranking failed (see log); these picks are the top items by "
                 "interest score instead."
             )
-        log.info("[4/5] summarizing %d picks", len(picks))
+        log_bg(f"[4/5] summarizing {len(picks)} picks")
         items = _build_items(picks)
 
-        log.info("[5/5] rendering PDF")
+        log_bg("[5/5] rendering PDF")
         from . import pdf  # imported late: heavy (Playwright)
 
         pdf_path = await pdf.render(today, items)
@@ -261,8 +282,8 @@ async def _run(
         _restore(today, restore, admin_id)
         raise
     result["pdf"] = pdf_path
-    log.info("digest saved: %s", pdf_path)
-    log.info(llm.usage_report())
+    log_bg(f"digest saved: {pdf_path}")
+    log_bg(llm.usage_report())
     return result
 
 

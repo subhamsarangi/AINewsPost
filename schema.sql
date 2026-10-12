@@ -67,3 +67,20 @@ CREATE TABLE digest_items (
     rank      INT NOT NULL,
     PRIMARY KEY (digest_id, item_id)
 );
+
+CREATE TABLE bg_tasks (
+    id        BIGSERIAL PRIMARY KEY,
+    task_key  TEXT NOT NULL UNIQUE,
+    status    TEXT NOT NULL,
+    result    JSONB,
+    error     TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE bg_logs (
+    id        BIGSERIAL PRIMARY KEY,
+    task_key  TEXT NOT NULL,
+    message   TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
