@@ -16,7 +16,7 @@ docker compose up -d
 
 uv run pytest -q
 
-uv run runner.py
+uv run python main.py
 ```
 
 ---

@@ -17,7 +17,11 @@
     </div>
 
     <!-- Today's digest -->
-    {% if today_items %}
+    {% if is_future %}
+    <div class="bg-purple-900 border border-purple-700 text-purple-200 px-6 py-8 rounded text-center">
+        <p class="text-lg">⏰ Come back later for this digest</p>
+    </div>
+    {% elif today_items %}
     <div class="space-y-4">
         <div class="flex justify-between items-center">
             <h2 class="text-2xl font-semibold text-white">Picks</h2>
@@ -81,9 +85,22 @@
         {% endfor %}
     </div>
     {% else %}
-    <div class="bg-blue-900 border border-blue-700 text-blue-200 px-6 py-4 rounded">
-        No digest for this date yet.
+    {% if is_future %}
+    <div class="bg-purple-900 border border-purple-700 text-purple-200 px-6 py-4 rounded text-center">
+        <p>⏰ Come back later for this digest</p>
     </div>
+    {% else %}
+    <div class="bg-blue-900 border border-blue-700 text-blue-200 px-6 py-4 rounded flex justify-between items-center">
+        <div>No digest for this date yet.</div>
+        <button
+            id="generateBtn"
+            onclick="generateDigest()"
+            class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
+        >
+            ✨ Generate Digest
+        </button>
+    </div>
+    {% endif %}
     {% endif %}
 
     <script>
@@ -153,6 +170,30 @@
                 errorAlert.classList.remove('hidden');
                 btn.disabled = false;
                 btn.textContent = '🔄 Rebuild PDF';
+            }
+        }
+        
+        async function generateDigest() {
+            const btn = document.getElementById('generateBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Generating...';
+            
+            try {
+                const res = await fetch(`/api/digest/{{ selected_date }}/generate`, { method: 'POST' });
+                const data = await res.json();
+                
+                if (data.status === 'ok') {
+                    btn.textContent = '✓ Done!';
+                    setTimeout(() => window.location.reload(), 1500);
+                } else {
+                    alert('Error: ' + (data.message || 'Failed to generate digest'));
+                    btn.disabled = false;
+                    btn.textContent = '✨ Generate Digest';
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+                btn.disabled = false;
+                btn.textContent = '✨ Generate Digest';
             }
         }
     </script>

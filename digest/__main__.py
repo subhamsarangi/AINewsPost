@@ -124,9 +124,4 @@ def main(argv: list[str] | None = None) -> int:
 if __name__ == "__main__":
     import sys
     
-    # Windows + asyncio subprocess fix for Playwright
-    if sys.platform == "win32":
-        import asyncio
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    
     sys.exit(main())

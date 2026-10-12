@@ -5,11 +5,6 @@ import sys
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-# Windows event loop fix MUST be first, before any async imports
-if sys.platform == "win32":
-    import asyncio
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
 from fastapi import FastAPI, Depends, HTTPException, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -183,9 +178,12 @@ async def digests_page(
             else:
                 digest_obj_date = date_type.today()
 
+            today = date_type.today()
+            is_future = digest_obj_date > today
+
             today_digest = db.get_digest(conn, digest_obj_date)
             today_items = []
-            if today_digest:
+            if today_digest and not is_future:
                 digest_item_rows = db.digest_items(conn, today_digest["id"])
                 for row in digest_item_rows:
                     item = db.get_item(conn, row["id"])
@@ -218,6 +216,8 @@ async def digests_page(
             today_items=today_items,
             today_digest=today_digest,
             selected_date=date or digest_obj_date.isoformat(),
+            today_date=today.isoformat(),
+            is_future=is_future,
             sources_by_category=sources_by_category,
         )
     )
@@ -399,6 +399,30 @@ async def rebuild_digest_pdf(
         return {"status": "error", "message": str(e)}
 
 
+@app.post("/api/digest/{digest_date}/generate")
+async def generate_digest(
+    digest_date: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Generate a new digest for a date (runs pipeline)."""
+    try:
+        from digest import pipeline
+        
+        digest_obj_date = datetime.fromisoformat(digest_date).date()
+        
+        # Run pipeline for this date
+        result = await pipeline.run(force=True, today=digest_obj_date)
+        
+        if result.get("pdf"):
+            return {"status": "ok", "pdf_path": result["pdf"], "message": f"Generated digest for {digest_obj_date}"}
+        else:
+            return {"status": "error", "message": result.get("note", "Failed to generate digest")}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
+
 async def star_item(
     item_id: str,
     current_user: dict = Depends(get_current_user),
@@ -427,13 +451,6 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-    import sys
-
-    # Windows + asyncio subprocess fix for Playwright
-    if sys.platform == "win32":
-        import asyncio
-
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
     port = int(os.getenv("PORT", "8000"))
     uvicorn.run(

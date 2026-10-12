@@ -197,11 +197,6 @@ async def _preview(n: int = 3) -> Path:
 
 if __name__ == "__main__":
     import asyncio
-    import sys
-    
-    # Windows + asyncio subprocess fix for Playwright
-    if sys.platform == "win32":
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     
     logging.basicConfig(
         level=logging.INFO,
