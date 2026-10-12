@@ -653,6 +653,10 @@ async def send_chatbot_message(
         # Get bot response with session history
         try:
             response_data = await chatbot.chat(user_message, session_history=history)
+            
+            # Debug: log what chatbot returned
+            if DEBUG := os.getenv("DEBUG_GUARDRAILS") == "1":
+                print(f"[main] chatbot returned: search_query={response_data.get('search_query')}, search_results_len={len(response_data.get('search_results') or '')}")
         except Exception as chat_err:
             response = f"Error processing message: {str(chat_err)[:100]}"
             return {
@@ -673,16 +677,21 @@ async def send_chatbot_message(
                     user_message,
                     search_query=response_data.get("search_query"),
                 )
+                search_results = response_data.get("search_results")
+                print(f"[main] saving assistant msg - search_results present: {bool(search_results)}, len: {len(search_results) if search_results else 0}")
+                import sys
+                sys.stdout.flush()
                 db.save_chatbot_message(
                     conn,
                     session_id,
                     "assistant",
                     response_data["response"],
                     search_query=response_data.get("search_query"),
-                    search_results=response_data.get("search_results"),
+                    search_results=search_results,
                     guardrail_info=f"{response_data.get('guardrail_verdict')}: {response_data.get('guardrail_reason')}",
                 )
                 conn.commit()
+                print(f"[main] assistant msg saved to DB with search_results")
         except Exception as db_err:
             import traceback
             traceback.print_exc()

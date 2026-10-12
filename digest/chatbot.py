@@ -265,6 +265,8 @@ instructions:
       You HAVE web search capabilities. When you receive fresh search results
       below, use them to answer questions about recent events, new releases,
       or current information. Never say you can't search or can't access the web.
+      If I provide search results in the message, incorporate them into your answer.
+      Always answer the user's question using any available information.
 
       Style rules (important):
       - Be brief. Default to 1-4 sentences.
@@ -336,12 +338,6 @@ define subflow check output policy
     stop
 """
 
-config = RailsConfig.from_content(colang_content=COLANG_CONFIG, yaml_content=YAML_CONFIG)
-rails = LLMRails(config)
-rails.register_action(policy_verdict, "policy_verdict")
-rails.register_action(web_search, "web_search")
-
-
 async def chat(user_message: str, session_history: list[dict] | None = None) -> dict:
     """Process a user message and return bot response with metadata.
     
@@ -376,7 +372,7 @@ async def chat(user_message: str, session_history: list[dict] | None = None) -> 
     rails.register_action(policy_verdict, "policy_verdict")
     rails.register_action(web_search, "web_search")
     
-    _pending = {}  # Reset pending
+    _pending.clear()  # Clear instead of reassign
     
     masked = mask_pii(user_message)
     if DEBUG and masked != user_message:
@@ -388,16 +384,30 @@ async def chat(user_message: str, session_history: list[dict] | None = None) -> 
     response = await rails.generate_async(messages=history)
     reply = mask_pii(response["content"], include_person=False)
     
+    # Capture search results before they're consumed
+    search_query = _pending.get("query", "")
+    search_results = _pending.get("results", "")
+    
     if DEBUG:
         print(f"  [response] {reply[:200]}...")
-        print(f"  [pending] query={_pending.get('query')}, results_len={len(_pending.get('results', ''))}")
+        print(f"  [pending] query={search_query}, results_len={len(search_results)}")
+        if search_results:
+            print(f"  [pending] results_sample={search_results[:100]}")
+        import sys
+        sys.stdout.flush()
+    
+    # If search happened, add it to history as system message so bot uses it next time
+    if search_results:
+        history.append({"role": "system", "content": f"Web search results for '{search_query}':\n{search_results}"})
     
     history.append({"role": "assistant", "content": reply})
     
-    # Capture metadata
-    verdict, reason = await policy_verdict(reply, stage="output")
+    # Capture search results BEFORE policy_verdict
     search_query = _pending.get("query", "")
     search_results = _pending.get("results", "")
+    
+    # Capture metadata
+    verdict, reason = await policy_verdict(reply, stage="output")
     
     return {
         "response": reply,

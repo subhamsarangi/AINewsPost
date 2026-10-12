@@ -158,22 +158,6 @@
       <!-- Messages will be loaded here -->
     </div>
 
-    <div id="guardrails-section" class="guardrails-section hidden">
-      <button id="guardrails-toggle" class="guardrails-header" onclick="toggleGuardrails()" style="width: 100%; text-align: left; background: none; border: none; cursor: pointer; padding: 0; display: flex; align-items: center; gap: 0.5rem; color: inherit;">
-        <span id="toggle-icon" style="display: inline-block; transition: transform 0.2s;">▶</span>
-        <strong>Processing:</strong>
-        <span id="guardrail-verdict" class="verdict"></span>
-      </button>
-      <div id="guardrails-details" class="guardrails-details" style="display: none; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid #444;">
-        <p id="guardrail-reason"></p>
-        <div id="search-section" class="search-section hidden">
-          <strong>Web Search:</strong>
-          <p id="search-query"></p>
-          <div id="search-results"></div>
-        </div>
-      </div>
-    </div>
-
     <div class="chat-input-area">
       <form id="chat-form" onsubmit="sendMessage(event)">
         <textarea id="message-input" placeholder="Ask me about AI, LLMs, agents..." rows="1" disabled></textarea>
@@ -373,51 +357,6 @@
   color: #e0e0e0;
 }
 
-.guardrails-section {
-  margin: 1rem;
-  padding: 1rem;
-  background-color: #2a2a2a;
-  border-left: 3px solid #f59e0b;
-  border-radius: 4px;
-  font-size: 0.9rem;
-  color: #d0d0d0;
-}
-
-.guardrails-section.hidden {
-  display: none;
-}
-
-.guardrails-details {
-  transition: max-height 0.2s ease, opacity 0.2s ease;
-}
-
-.verdict {
-  font-weight: 600;
-  padding: 0.25rem 0.5rem;
-  border-radius: 3px;
-  margin-left: 0.5rem;
-}
-
-.verdict.ok {
-  background-color: #10b981;
-  color: white;
-}
-
-.verdict.off_topic {
-  background-color: #f59e0b;
-  color: white;
-}
-
-.verdict.restricted {
-  background-color: #ef4444;
-  color: white;
-}
-
-.verdict.error {
-  background-color: #6b7280;
-  color: white;
-}
-
 .search-section {
   margin-top: 0.5rem;
   padding: 0.5rem;
@@ -587,7 +526,6 @@
 
 <script>
 let currentSessionId = {{ current_session.id if current_session else 'null' }};
-let messageInput = document.getElementById('message-input');
 let isSending = false;
 let messagesLoaded = false;
 
@@ -757,6 +695,7 @@ async function loadMessages() {
     messagesDiv.innerHTML = '<div style="color: #f87171; padding: 1rem;">Failed to load messages</div>';
   } finally {
     messagesLoaded = true;
+    const messageInput = document.getElementById('message-input');
     if (messageInput) messageInput.disabled = false;
     const sendBtn = document.getElementById('send-btn');
     if (sendBtn) sendBtn.disabled = false;
@@ -772,6 +711,11 @@ async function sendMessage(e) {
   if (isSending) {
     return;
   }
+  
+  // Query input fresh (might have been transformed from createSessionAndSend)
+  const messageInput = document.getElementById('message-input');
+  if (!messageInput) return;
+  
   const message = messageInput.value.trim();
   if (!message || !currentSessionId) return;
   
@@ -808,10 +752,6 @@ async function sendMessage(e) {
   messagesDiv.appendChild(loadingMsgEl);
   messagesDiv.scrollTop = messagesDiv.scrollHeight;
   
-  // Show guardrails section
-  const guardrailsSection = document.getElementById('guardrails-section');
-  guardrailsSection.classList.remove('hidden');
-  
   try {
     const res = await fetch(`/api/chatbot/sessions/${currentSessionId}/message`, {
       method: 'POST',
@@ -833,35 +773,6 @@ async function sendMessage(e) {
       return;
     }
     
-    // Update guardrails display
-    const verdict = document.getElementById('guardrail-verdict');
-    verdict.textContent = data.guardrail_verdict.toUpperCase();
-    verdict.className = 'verdict ' + data.guardrail_verdict;
-    
-    const reason = document.getElementById('guardrail-reason');
-    reason.textContent = data.guardrail_reason || '';
-    
-    // Show search results if present
-    const searchSection = document.getElementById('search-section');
-    if (data.search_query) {
-      searchSection.classList.remove('hidden');
-      document.getElementById('search-query').textContent = 'Query: ' + data.search_query;
-      
-      const resultsDiv = document.getElementById('search-results');
-      resultsDiv.innerHTML = '';
-      if (data.search_results) {
-        const results = data.search_results.split('\n').filter(l => l.trim());
-        results.forEach(r => {
-          const resEl = document.createElement('div');
-          resEl.className = 'search-result';
-          resEl.textContent = r;
-          resultsDiv.appendChild(resEl);
-        });
-      }
-    } else {
-      searchSection.classList.add('hidden');
-    }
-    
     // Add bot message to UI with markdown
     const botMsgEl = document.createElement('div');
     botMsgEl.className = 'message assistant';
@@ -880,6 +791,30 @@ async function sendMessage(e) {
     }
     
     botMsgEl.appendChild(contentDiv);
+    
+    // Add message info accordion if search or guardrails present
+    if (data.search_query || data.search_results || data.guardrail_verdict !== 'ok') {
+      const infoDiv = document.createElement('div');
+      infoDiv.className = 'message-info-accordion';
+      let infoHTML = '<button class="info-toggle" onclick="toggleMessageInfo(this)">▶ Details</button><div class="info-content" style="display: none;">';
+      
+      if (data.guardrail_verdict !== 'ok') {
+        infoHTML += `<div><strong>Guardrails:</strong> ${escapeHtml(data.guardrail_verdict)}: ${escapeHtml(data.guardrail_reason || '')}</div>`;
+      }
+      
+      if (data.search_query) {
+        infoHTML += `<div style="margin-top: 0.5rem;"><strong>Search Query:</strong> ${escapeHtml(data.search_query)}</div>`;
+      }
+      
+      if (data.search_results) {
+        infoHTML += `<div style="margin-top: 0.5rem;"><strong>Search Results:</strong><pre style="font-size: 0.8rem; margin-top: 0.25rem;">${escapeHtml(data.search_results)}</pre></div>`;
+      }
+      
+      infoHTML += '</div>';
+      infoDiv.innerHTML = infoHTML;
+      botMsgEl.appendChild(infoDiv);
+    }
+    
     messagesDiv.appendChild(botMsgEl);
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
     
@@ -946,30 +881,9 @@ async function createSessionAndSend(e) {
     </div>
   `;
   
-  // Add guardrails section
-  const guardrailsSection = document.createElement('div');
-  guardrailsSection.id = 'guardrails-section';
-  guardrailsSection.className = 'guardrails-section hidden';
-  guardrailsSection.innerHTML = `
-    <button id="guardrails-toggle" class="guardrails-header" onclick="toggleGuardrails()" style="width: 100%; text-align: left; background: none; border: none; cursor: pointer; padding: 0; display: flex; align-items: center; gap: 0.5rem; color: inherit;">
-      <span id="toggle-icon" style="display: inline-block; transition: transform 0.2s;">▶</span>
-      <strong>Processing:</strong>
-      <span id="guardrail-verdict" class="verdict"></span>
-    </button>
-    <div id="guardrails-details" class="guardrails-details" style="display: none; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid #444;">
-      <p id="guardrail-reason"></p>
-      <div id="search-section" class="search-section hidden">
-        <strong>Web Search:</strong>
-        <p id="search-query"></p>
-        <div id="search-results"></div>
-      </div>
-    </div>
-  `;
-  
   // Insert in correct order
   chatMain.insertBefore(header, inputArea);
   chatMain.insertBefore(messagesDiv, inputArea);
-  chatMain.insertBefore(guardrailsSection, inputArea);
   
   // Wire up delete button
   document.getElementById('delete-session-btn').addEventListener('click', deleteSession);
@@ -1060,17 +974,26 @@ async function createSessionAndSend(e) {
     }
     botMsgEl.appendChild(contentDiv);
     
-    // Show guardrail info
-    if (msgData.guardrail_info || msgData.search_results) {
+    // Show message info accordion
+    if (msgData.search_query || msgData.search_results || msgData.guardrail_info) {
       const infoDiv = document.createElement('div');
       infoDiv.className = 'message-info-accordion';
-      infoDiv.innerHTML = `
-        <button class="info-toggle" onclick="toggleMessageInfo(this)">▶ Details</button>
-        <div class="info-content" style="display: none;">
-          ${msgData.guardrail_info ? `<div><strong>Guardrails:</strong> ${escapeHtml(msgData.guardrail_info)}</div>` : ''}
-          ${msgData.search_results ? `<div><strong>Search Results:</strong><pre>${escapeHtml(msgData.search_results)}</pre></div>` : ''}
-        </div>
-      `;
+      let infoHTML = '<button class="info-toggle" onclick="toggleMessageInfo(this)">▶ Details</button><div class="info-content" style="display: none;">';
+      
+      if (msgData.guardrail_info) {
+        infoHTML += `<div><strong>Guardrails:</strong> ${escapeHtml(msgData.guardrail_info)}</div>`;
+      }
+      
+      if (msgData.search_query) {
+        infoHTML += `<div style="margin-top: 0.5rem;"><strong>Search Query:</strong> ${escapeHtml(msgData.search_query)}</div>`;
+      }
+      
+      if (msgData.search_results) {
+        infoHTML += `<div style="margin-top: 0.5rem;"><strong>Search Results:</strong><pre style="font-size: 0.8rem; margin-top: 0.25rem;">${escapeHtml(msgData.search_results)}</pre></div>`;
+      }
+      
+      infoHTML += '</div>';
+      infoDiv.innerHTML = infoHTML;
       botMsgEl.appendChild(infoDiv);
     }
     
@@ -1131,14 +1054,6 @@ function escapeHtml(text) {
   return text.replace(/[&<>"']/g, m => map[m]);
 }
 
-function toggleGuardrails() {
-  const details = document.getElementById('guardrails-details');
-  const icon = document.getElementById('toggle-icon');
-  const isOpen = details.style.display !== 'none';
-  details.style.display = isOpen ? 'none' : 'block';
-  icon.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(90deg)';
-}
-
 function toggleMessageInfo(btn) {
   const content = btn.nextElementSibling;
   const icon = btn.querySelector('span') || btn.textContent[0];
@@ -1186,6 +1101,7 @@ document.getElementById('delete-session-btn')?.addEventListener('click', deleteS
 // Initial load
 loadSessions();
 if (currentSessionId) {
+  const messageInput = document.getElementById('message-input');
   if (messageInput) messageInput.disabled = true;
   loadMessages();
   autofillFirstMessage();
