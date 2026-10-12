@@ -2,10 +2,11 @@ services:
   - type: web
     name: ainewspost
     env: python
-    plan: standard
+    plan: free
     buildCommand: |
       pip install uv
       uv sync
+      uv run playwright install-deps chromium
       uv run playwright install chromium
     startCommand: uv run python main.py
     envVars:
