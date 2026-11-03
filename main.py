@@ -410,21 +410,26 @@ async def generate_digest(
         from digest import pipeline
         import asyncio
         import json
-        
+
         digest_obj_date = datetime.fromisoformat(digest_date).date()
         task_key = f"digest_gen_{digest_obj_date}"
-        
+
         def run_pipeline():
             import logging
+
             log = logging.getLogger("bg_pipeline")
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
                 log.info(f"[BG] Starting pipeline for {digest_obj_date}")
                 with db.connect() as conn:
-                    db.add_bg_log(conn, task_key, f"Starting pipeline for {digest_obj_date}")
+                    db.add_bg_log(
+                        conn, task_key, f"Starting pipeline for {digest_obj_date}"
+                    )
                     conn.commit()
-                result = loop.run_until_complete(pipeline.run(force=True, today=digest_obj_date, task_key=task_key))
+                result = loop.run_until_complete(
+                    pipeline.run(force=True, today=digest_obj_date, task_key=task_key)
+                )
                 log.info(f"[BG] Pipeline done, writing to DB: {result}")
                 with db.connect() as conn:
                     db.add_bg_log(conn, task_key, f"Pipeline complete")
@@ -433,6 +438,7 @@ async def generate_digest(
                 log.info(f"[BG] Task recorded in DB")
             except Exception as e:
                 import traceback
+
                 log.error(f"[BG] Pipeline failed: {e}")
                 traceback.print_exc()
                 try:
@@ -444,7 +450,7 @@ async def generate_digest(
                     log.error(f"[BG] Failed to record error: {db_err}")
             finally:
                 loop.close()
-        
+
         try:
             with db.connect() as conn:
                 db.record_bg_task(conn, task_key, "generating")
@@ -453,13 +459,15 @@ async def generate_digest(
         except Exception as e:
             print(f"✗ Failed to create task row: {e}")
             import traceback
+
             traceback.print_exc()
             return {"status": "error", "message": f"Failed to record task: {str(e)}"}
-        
+
         background_tasks.add_task(run_pipeline)
         return {"status": "generating", "message": "Digest generation started"}
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         return {"status": "error", "message": str(e)}
 
@@ -472,11 +480,16 @@ async def digest_logs(
     """Get logs for digest generation task."""
     digest_obj_date = datetime.fromisoformat(digest_date).date()
     task_key = f"digest_gen_{digest_obj_date}"
-    
+
     with db.connect() as conn:
         logs = db.get_bg_logs(conn, task_key, limit=100)
-    
-    return {"logs": [{"message": log["message"], "time": log["created_at"].isoformat()} for log in logs]}
+
+    return {
+        "logs": [
+            {"message": log["message"], "time": log["created_at"].isoformat()}
+            for log in logs
+        ]
+    }
 
 
 @app.get("/api/digest/{digest_date}/status")
@@ -486,30 +499,37 @@ async def digest_status(
 ):
     """Check if digest generation is still running."""
     import json
-    
+
     digest_obj_date = datetime.fromisoformat(digest_date).date()
     task_key = f"digest_gen_{digest_obj_date}"
-    
+
     with db.connect() as conn:
         task = db.get_bg_task(conn, task_key)
         if task:
             status = task["status"]
             if status == "done":
-                result = task["result"] if isinstance(task["result"], dict) else json.loads(task["result"]) if task["result"] else {}
+                result = (
+                    task["result"]
+                    if isinstance(task["result"], dict)
+                    else json.loads(task["result"]) if task["result"] else {}
+                )
                 if result.get("pdf"):
                     return {"status": "done", "pdf_path": result["pdf"]}
                 else:
-                    return {"status": "no_items", "message": result.get("note", "No items to digest")}
+                    return {
+                        "status": "no_items",
+                        "message": result.get("note", "No items to digest"),
+                    }
             elif status == "error":
                 return {"status": "error", "message": task["error"]}
             else:
                 return {"status": status}
-        
+
         # Check if digest exists in DB
         digest = db.get_digest(conn, digest_obj_date)
         if digest:
             return {"status": "done", "pdf_path": digest["pdf_path"]}
-    
+
     return {"status": "none"}
 
 
@@ -549,10 +569,12 @@ async def chatbot_page(
     if session:
         try:
             with db.connect() as conn:
-                current_session = db.get_chatbot_session(conn, session, current_user["user_id"])
+                current_session = db.get_chatbot_session(
+                    conn, session, current_user["user_id"]
+                )
         except Exception:
             pass
-    
+
     return HTMLResponse(
         render(
             "chatbot.html",
@@ -572,14 +594,15 @@ async def create_chatbot_session_api(
     try:
         data = await request.json()
         title = data.get("title", "New chat")
-        
+
         with db.connect() as conn:
             session_id = db.create_chatbot_session(conn, current_user["user_id"], title)
             conn.commit()
-        
+
         return {"session_id": session_id}
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         return {"error": str(e), "session_id": None}
 
@@ -592,12 +615,11 @@ async def list_chatbot_sessions_api(
     try:
         with db.connect() as conn:
             sessions = db.list_chatbot_sessions(conn, current_user["user_id"])
-        
-        return {
-            "sessions": [dict(s) for s in sessions]
-        }
+
+        return {"sessions": [dict(s) for s in sessions]}
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         return {"sessions": [], "error": str(e)}
 
@@ -613,14 +635,15 @@ async def get_chatbot_messages_api(
             session = db.get_chatbot_session(conn, session_id, current_user["user_id"])
             if not session:
                 return {"messages": [], "error": "Session not found"}
-            
-            messages = db.get_chatbot_messages(conn, session_id, current_user["user_id"])
-        
-        return {
-            "messages": [dict(m) for m in messages]
-        }
+
+            messages = db.get_chatbot_messages(
+                conn, session_id, current_user["user_id"]
+            )
+
+        return {"messages": [dict(m) for m in messages]}
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         return {"messages": [], "error": str(e)}
 
@@ -634,29 +657,49 @@ async def send_chatbot_message(
     """Send a message and get a response."""
     try:
         from digest import chatbot
-        
+
         data = await request.json()
         user_message = data.get("message", "").strip()
-        
+
         if not user_message:
-            return {"error": "Empty message", "response": "", "search_query": None, "search_results": None, "guardrail_verdict": "error", "guardrail_reason": ""}
-        
+            return {
+                "error": "Empty message",
+                "response": "",
+                "search_query": None,
+                "search_results": None,
+                "guardrail_verdict": "error",
+                "guardrail_reason": "",
+            }
+
         with db.connect() as conn:
             session = db.get_chatbot_session(conn, session_id, current_user["user_id"])
             if not session:
-                return {"error": "Session not found", "response": "", "search_query": None, "search_results": None, "guardrail_verdict": "error", "guardrail_reason": ""}
-            
+                return {
+                    "error": "Session not found",
+                    "response": "",
+                    "search_query": None,
+                    "search_results": None,
+                    "guardrail_verdict": "error",
+                    "guardrail_reason": "",
+                }
+
             # Load existing messages to build history
-            messages = db.get_chatbot_messages(conn, session_id, current_user["user_id"])
-            history = [{"role": msg["role"], "content": msg["content"]} for msg in messages]
-        
+            messages = db.get_chatbot_messages(
+                conn, session_id, current_user["user_id"]
+            )
+            history = [
+                {"role": msg["role"], "content": msg["content"]} for msg in messages
+            ]
+
         # Get bot response with session history
         try:
             response_data = await chatbot.chat(user_message, session_history=history)
-            
+
             # Debug: log what chatbot returned
             if DEBUG := os.getenv("DEBUG_GUARDRAILS") == "1":
-                print(f"[main] chatbot returned: search_query={response_data.get('search_query')}, search_results_len={len(response_data.get('search_results') or '')}")
+                print(
+                    f"[main] chatbot returned: search_query={response_data.get('search_query')}, search_results_len={len(response_data.get('search_results') or '')}"
+                )
         except Exception as chat_err:
             response = f"Error processing message: {str(chat_err)[:100]}"
             return {
@@ -666,7 +709,7 @@ async def send_chatbot_message(
                 "guardrail_verdict": "error",
                 "guardrail_reason": str(chat_err)[:200],
             }
-        
+
         # Save messages to DB
         try:
             with db.connect() as conn:
@@ -678,8 +721,11 @@ async def send_chatbot_message(
                     search_query=response_data.get("search_query"),
                 )
                 search_results = response_data.get("search_results")
-                print(f"[main] saving assistant msg - search_results present: {bool(search_results)}, len: {len(search_results) if search_results else 0}")
+                print(
+                    f"[main] saving assistant msg - search_results present: {bool(search_results)}, len: {len(search_results) if search_results else 0}"
+                )
                 import sys
+
                 sys.stdout.flush()
                 db.save_chatbot_message(
                     conn,
@@ -694,6 +740,7 @@ async def send_chatbot_message(
                 print(f"[main] assistant msg saved to DB with search_results")
         except Exception as db_err:
             import traceback
+
             traceback.print_exc()
             return {
                 "response": response_data["response"],
@@ -702,12 +749,32 @@ async def send_chatbot_message(
                 "guardrail_verdict": response_data.get("guardrail_verdict"),
                 "guardrail_reason": f"DB save failed: {str(db_err)[:100]}",
             }
-        
+
         return response_data
     except Exception as e:
         import traceback
+
         traceback.print_exc()
-        return {"error": str(e), "response": "", "search_query": None, "search_results": None, "guardrail_verdict": "error", "guardrail_reason": str(e)[:200]}
+        return {
+            "error": str(e),
+            "response": "",
+            "search_query": None,
+            "search_results": None,
+            "guardrail_verdict": "error",
+            "guardrail_reason": str(e)[:200],
+        }
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        return {
+            "error": str(e),
+            "response": "",
+            "search_query": None,
+            "search_results": None,
+            "guardrail_verdict": "error",
+            "guardrail_reason": str(e)[:200],
+        }
 
 
 @app.delete("/api/chatbot/sessions/{session_id}")
@@ -718,16 +785,68 @@ async def delete_chatbot_session_api(
     """Delete a chatbot session."""
     try:
         with db.connect() as conn:
-            success = db.delete_chatbot_session(conn, session_id, current_user["user_id"])
+            success = db.delete_chatbot_session(
+                conn, session_id, current_user["user_id"]
+            )
             if not success:
                 return {"error": "Session not found", "status": "failed"}
             conn.commit()
-        
+
         return {"status": "deleted"}
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         return {"error": str(e), "status": "failed"}
+
+
+# @app.post("/api/chatbot/session-with-context/{item_id}")
+# async def create_chatbot_session_with_context(
+#     request: Request,
+#     item_id: int,
+#     current_user: dict = Depends(get_current_user),
+# ):
+#     """Create a new chatbot session pre-populated with item context."""
+#     try:
+#         with db.connect() as conn:
+#             item = db.get_item(conn, item_id)
+#             if not item:
+#                 raise HTTPException(status_code=404, detail="Item not found")
+
+#             # Create new session
+#             session_id = db.create_chatbot_session(
+#                 conn, current_user["user_id"], title=item["title"][:40]
+#             )
+#             conn.commit()
+
+#             # Pre-populate context for grounding
+#             db.save_chatbot_message(
+#                 conn,
+#                 session_id,
+#                 "system",
+#                 f"""
+#                 ITEM CONTEXT -
+#                 Title: {item['title']}\n\n
+#                 Summary: {item['summary'] or 'No summary available'}\n\n""",
+#             )
+
+#             # db.save_chatbot_message(
+#             #     conn,
+#             #     session_id,
+#             #     "system",
+#             #     f"ITEM FULL TEXT:\n{item['content'] or 'No content'}",
+#             # )
+#             conn.commit()
+
+#         response = RedirectResponse(url="/chatbot", status_code=303)
+#         return response
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         import traceback
+
+#         traceback.print_exc()
+#         return {"error": str(e), "session_id": None}
 
 
 @app.get("/health")

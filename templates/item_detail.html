@@ -36,6 +36,14 @@
             >
                 {% if item.starred %}★ Starred{% else %}☆ Star{% endif %}
             </button>
+            <!-- After the Star button, this form should be added -->
+            <!-- <form hx-post="/api/chatbot/session-with-context/{{ item.id }}" hx-swap="location" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                <button type="submit">Ask Chatbot</button>
+                <input type="hidden" name="item_title" value="{{ item.title }}">
+                <input type="hidden" name="item_summary" value="{{ item.summary or '' }}">
+                <input type="hidden" name="item_content" value="{{ item.content or '' }}">
+            </form> -->
+
         </div>
     </div>
 
