@@ -2,7 +2,8 @@
 
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+import logging
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import FastAPI, Depends, HTTPException, Form, Request, BackgroundTasks
@@ -32,12 +33,42 @@ except Exception:
 
 # Jinja2
 jinja_env = Environment(loader=FileSystemLoader("templates"))
+log = logging.getLogger(__name__)
+ACTIVE_PIPELINES: set[str] = set()
 
 
 def render(template_name: str, **context) -> str:
     """Render template."""
     template = jinja_env.get_template(template_name)
     return template.render(**context)
+
+
+def _cleanup_stopped_pipeline(digest_date: date, task_key: str) -> bool:
+    """Remove only this date's digest/PDF and task metadata after the worker stops."""
+    from digest import r2
+
+    try:
+        r2.delete(digest_date.isoformat())
+        with db.connect() as conn:
+            db.delete_digest(conn, digest_date)
+            if not db.delete_stopped_bg_task(conn, task_key):
+                raise RuntimeError("The pipeline task was no longer marked as stopping")
+            conn.commit()
+    except Exception as e:
+        log.exception("Failed to clean stopped pipeline for %s", digest_date)
+        try:
+            with db.connect() as conn:
+                db.add_bg_log(conn, task_key, f"Cleanup failed: {e}")
+                db.record_bg_task(
+                    conn, task_key, "error", error=f"Stop requested but cleanup failed: {e}"
+                )
+                conn.commit()
+        except Exception:
+            log.exception("Failed to record stopped-pipeline cleanup error")
+        return False
+
+    log.info("Stopped pipeline and cleaned date-specific outputs for %s", digest_date)
+    return True
 
 
 # ============ ERROR HANDLERS ============
@@ -420,6 +451,7 @@ async def generate_digest(
             log = logging.getLogger("bg_pipeline")
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
+            ACTIVE_PIPELINES.add(task_key)
             try:
                 log.info(f"[BG] Starting pipeline for {digest_obj_date}")
                 with db.connect() as conn:
@@ -432,34 +464,51 @@ async def generate_digest(
                 )
                 log.info(f"[BG] Pipeline done, writing to DB: {result}")
                 with db.connect() as conn:
-                    db.add_bg_log(conn, task_key, f"Pipeline complete")
-                    db.record_bg_task(conn, task_key, "done", result=result)
+                    completed = db.finish_bg_task(
+                        conn, task_key, "done", result=result
+                    )
+                    if completed:
+                        db.add_bg_log(conn, task_key, "Pipeline complete")
                     conn.commit()
+                if not completed:
+                    _cleanup_stopped_pipeline(digest_obj_date, task_key)
+                    return
                 log.info(f"[BG] Task recorded in DB")
+            except pipeline.PipelineCancelled:
+                _cleanup_stopped_pipeline(digest_obj_date, task_key)
             except Exception as e:
-                import traceback
-
-                log.error(f"[BG] Pipeline failed: {e}")
-                traceback.print_exc()
+                log.exception("[BG] Pipeline failed: %s", e)
                 try:
                     with db.connect() as conn:
-                        db.add_bg_log(conn, task_key, f"ERROR: {str(e)}")
-                        db.record_bg_task(conn, task_key, "error", error=str(e))
+                        failed = db.finish_bg_task(
+                            conn, task_key, "error", error=str(e)
+                        )
+                        if failed:
+                            db.add_bg_log(conn, task_key, f"ERROR: {str(e)}")
                         conn.commit()
+                    if not failed:
+                        _cleanup_stopped_pipeline(digest_obj_date, task_key)
                 except Exception as db_err:
                     log.error(f"[BG] Failed to record error: {db_err}")
             finally:
+                ACTIVE_PIPELINES.discard(task_key)
                 loop.close()
 
         try:
             with db.connect() as conn:
                 started = db.start_bg_task(conn, task_key)
+                status = (
+                    "generating"
+                    if started
+                    else (db.get_bg_task(conn, task_key) or {}).get("status", "none")
+                )
                 conn.commit()
             if not started:
                 return {
-                    "status": "generating",
+                    "status": status,
                     "message": "Digest generation is already in progress",
                 }
+            ACTIVE_PIPELINES.add(task_key)
             print(f"✓ Task row created: {task_key}")
         except Exception as e:
             print(f"✗ Failed to create task row: {e}")
@@ -474,6 +523,32 @@ async def generate_digest(
         import traceback
 
         traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/digest/{digest_date}/stop")
+async def stop_digest_pipeline(
+    digest_date: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Request a safe stop and date-specific cleanup for an active pipeline."""
+    try:
+        digest_obj_date = datetime.fromisoformat(digest_date).date()
+        task_key = f"digest_gen_{digest_obj_date}"
+        with db.connect() as conn:
+            status = db.request_bg_task_stop(conn, task_key)
+            conn.commit()
+        if status == "stopping" and task_key not in ACTIVE_PIPELINES:
+            if _cleanup_stopped_pipeline(digest_obj_date, task_key):
+                return {"status": "stopped"}
+            with db.connect() as conn:
+                task = db.get_bg_task(conn, task_key)
+            return {
+                "status": "error",
+                "message": task["error"] if task else "Pipeline cleanup failed",
+            }
+        return {"status": status}
+    except Exception as e:
         return {"status": "error", "message": str(e)}
 
 

@@ -641,7 +641,51 @@ def start_bg_task(conn, task_key: str) -> bool:
            VALUES (%s, 'generating', NULL, NULL, now())
            ON CONFLICT (task_key) DO UPDATE
            SET status = 'generating', result = NULL, error = NULL, updated_at = now()
-           WHERE bg_tasks.status <> 'generating'
+           WHERE bg_tasks.status NOT IN ('generating', 'stopping')
+           RETURNING task_key""",
+        (task_key,),
+    ).fetchone()
+    if not row:
+        return False
+    conn.execute("DELETE FROM bg_logs WHERE task_key = %s", (task_key,))
+    return True
+
+
+def request_bg_task_stop(conn, task_key: str) -> str:
+    """Request cancellation, returning the task's current status."""
+    row = conn.execute(
+        """UPDATE bg_tasks SET status = 'stopping', updated_at = now()
+           WHERE task_key = %s AND status IN ('generating', 'stopping')
+           RETURNING status""",
+        (task_key,),
+    ).fetchone()
+    if row:
+        return row["status"]
+    task = get_bg_task(conn, task_key)
+    return task["status"] if task else "none"
+
+
+def finish_bg_task(
+    conn, task_key: str, status: str, result=None, error: str | None = None
+) -> bool:
+    """Finish a task only if a stop request has not won the race."""
+    import json
+
+    row = conn.execute(
+        """UPDATE bg_tasks
+           SET status = %s, result = %s, error = %s, updated_at = now()
+           WHERE task_key = %s AND status = 'generating'
+           RETURNING task_key""",
+        (status, json.dumps(result) if result else None, error, task_key),
+    ).fetchone()
+    return row is not None
+
+
+def delete_stopped_bg_task(conn, task_key: str) -> bool:
+    """Delete task metadata and logs only after a requested stop is complete."""
+    row = conn.execute(
+        """DELETE FROM bg_tasks
+           WHERE task_key = %s AND status = 'stopping'
            RETURNING task_key""",
         (task_key,),
     ).fetchone()

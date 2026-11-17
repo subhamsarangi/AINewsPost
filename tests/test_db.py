@@ -26,7 +26,9 @@ def test_start_bg_task_clears_logs_only_after_claiming_task():
 
     assert db.start_bg_task(conn, "digest_gen_2026-11-17")
     assert conn.execute.call_count == 2
-    assert "WHERE bg_tasks.status <> 'generating'" in conn.execute.call_args_list[0].args[0]
+    assert "WHERE bg_tasks.status NOT IN ('generating', 'stopping')" in (
+        conn.execute.call_args_list[0].args[0]
+    )
 
 
 def test_start_bg_task_does_not_clear_logs_when_already_running():
@@ -35,3 +37,17 @@ def test_start_bg_task_does_not_clear_logs_when_already_running():
 
     assert not db.start_bg_task(conn, "digest_gen_2026-11-17")
     assert conn.execute.call_count == 1
+
+
+def test_request_bg_task_stop_marks_running_task_as_stopping():
+    conn = Mock()
+    conn.execute.return_value.fetchone.return_value = {"status": "stopping"}
+
+    assert db.request_bg_task_stop(conn, "digest_gen_2026-11-17") == "stopping"
+
+
+def test_finish_bg_task_does_not_overwrite_a_stop_request():
+    conn = Mock()
+    conn.execute.return_value.fetchone.return_value = None
+
+    assert not db.finish_bg_task(conn, "digest_gen_2026-11-17", "done")

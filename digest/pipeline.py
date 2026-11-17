@@ -16,6 +16,11 @@ log = logging.getLogger(__name__)
 
 FETCHERS = {"rss": rss.fetch, "hn": hn.fetch}
 
+
+class PipelineCancelled(RuntimeError):
+    """Raised when a background pipeline receives a stop request."""
+
+
 NOISY_LOGGERS = (
     "httpx",
     "httpcore",
@@ -53,10 +58,14 @@ def _fetcher(source: dict):
 # --------------------------------------------------------------------------
 # Stage: ingest (one source failing never stops the others)
 # --------------------------------------------------------------------------
-async def _ingest_source(source: dict, admin_id: str) -> dict:
+async def _ingest_source(
+    source: dict, admin_id: str, task_key: str | None = None
+) -> dict:
     import asyncio
     
     sid = source["id"]
+    if _task_is_stopping(task_key):
+        return {"id": sid, "new": 0, "error": "cancelled"}
     fetch = _fetcher(source)
     if fetch is None:
         log.warning(
@@ -74,11 +83,16 @@ async def _ingest_source(source: dict, admin_id: str) -> dict:
         else:
             items = await asyncio.to_thread(fetch, source, since)
     except Exception as e:
+        if _task_is_stopping(task_key):
+            return {"id": sid, "new": 0, "error": "cancelled"}
         msg = f"error: {type(e).__name__}: {e}"[:300]
         log.warning("source '%s' failed: %s", sid, msg)
         with db.connect() as conn:
             db.record_fetch(conn, sid, msg, 0, success=False)
         return {"id": sid, "new": 0, "error": msg}
+
+    if _task_is_stopping(task_key):
+        return {"id": sid, "new": 0, "error": "cancelled"}
 
     new = 0
     with db.connect() as conn:
@@ -101,15 +115,31 @@ async def _ingest_source(source: dict, admin_id: str) -> dict:
 # --------------------------------------------------------------------------
 # Stage: process new items (text, embeddings, clusters)
 # --------------------------------------------------------------------------
-def _process_new_items() -> None:
+def _task_is_stopping(task_key: str | None) -> bool:
+    if not task_key:
+        return False
+    with db.connect() as conn:
+        task = db.get_bg_task(conn, task_key)
+    return bool(task and task["status"] == "stopping")
+
+
+def _check_cancelled(task_key: str | None) -> None:
+    if _task_is_stopping(task_key):
+        raise PipelineCancelled("Pipeline stop requested")
+
+
+def _process_new_items(task_key: str | None = None) -> None:
     for _ in range(5):  # 200 pages per pass
+        _check_cancelled(task_key)
         with db.connect() as conn:
             st = extract.extract_pending(conn)
         if st["extracted"] + st["empty"] == 0:
             break
+    _check_cancelled(task_key)
     with db.connect() as conn:
         dedup.embed_pending(conn)
         dedup.cluster_new_items(conn)
+    _check_cancelled(task_key)
 
 
 # --------------------------------------------------------------------------
@@ -126,11 +156,12 @@ def _hn_comments(item: dict) -> list[str] | None:
         return None
 
 
-def _build_items(picks: list[dict]) -> list[dict]:
+def _build_items(picks: list[dict], task_key: str | None = None) -> list[dict]:
     """Full item dicts for the PDF, in rank order. Summaries are saved, so a
     rerun (or --force) never pays for the same summary twice."""
     items = []
     for n, pick in enumerate(picks, start=1):
+        _check_cancelled(task_key)
         with db.connect() as conn:
             item = db.get_item(conn, pick["id"])
             log.info(
@@ -174,6 +205,7 @@ async def run(
     with a message that says how to fix it; callers print it, no traceback."""
     _setup_logging()
     db.check()  # fail fast: before any network work
+    _check_cancelled(task_key)
     try:
         return await _run(dry_run=dry_run, no_fetch=no_fetch, force=force, today=today, task_key=task_key)
     except db.CONNECTION_ERRORS as e:  # connection dropped mid-run
@@ -211,10 +243,12 @@ async def _run(
                 db.add_bg_log(conn, task_key, msg)
                 conn.commit()
 
+    _check_cancelled(task_key)
     with db.connect() as conn:
         admin_id = db.ensure_admin_user(conn)
         db.sync_sources(conn, load_sources(include_todo=True), owner_id=admin_id)
         existing = db.get_digest(conn, today)
+    _check_cancelled(task_key)
     if existing and not dry_run and not force:
         result.update(
             pdf=existing["pdf_path"], note="digest for today exists (use --force)"
@@ -228,14 +262,17 @@ async def _run(
         sources = load_sources()
         log_bg(f"[1/5] fetching {len(sources)} sources")
         result["sources"] = await asyncio.gather(
-            *[_ingest_source(s, admin_id) for s in sources]
+            *[_ingest_source(s, admin_id, task_key) for s in sources]
         )
+    _check_cancelled(task_key)
     log_bg("[2/5] extracting page text, embedding, clustering")
-    _process_new_items()
+    _process_new_items(task_key)
+    _check_cancelled(task_key)
     log_bg("[3/5] ranking candidates")
 
     restore = None  # --force: old digest, put back on failure
     try:
+        _check_cancelled(task_key)
         with db.connect() as conn:
             if existing and not dry_run:  # free today's items for re-ranking
                 restore = (
@@ -252,6 +289,7 @@ async def _run(
                 }
                 for p in picks
             ]
+        _check_cancelled(task_key)
         log_bg(f"  picked {len(picks)} item(s)")
         if not picks:
             _restore(today, restore, admin_id)
@@ -268,16 +306,20 @@ async def _run(
                 "interest score instead."
             )
         log_bg(f"[4/5] summarizing {len(picks)} picks")
-        items = _build_items(picks)
+        items = _build_items(picks, task_key)
 
+        _check_cancelled(task_key)
         log_bg("[5/5] rendering PDF")
         from . import pdf  # imported late: heavy (Playwright)
 
         pdf_path = await pdf.render(today, items)
+        _check_cancelled(task_key)
         with db.connect() as conn:
             db.save_digest(
                 conn, today, pdf_path, [i["id"] for i in items], owner_id=admin_id
             )
+    except PipelineCancelled:
+        raise
     except Exception:
         _restore(today, restore, admin_id)
         raise

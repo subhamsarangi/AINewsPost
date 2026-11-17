@@ -62,3 +62,16 @@ def upload(pdf_bytes: bytes, date_str: str) -> str:
 
     # Use configured public URL
     return f"{public_url.rstrip('/')}/{key}"
+
+
+def delete(date_str: str) -> None:
+    """Delete the PDF object for one digest date."""
+    bucket = os.getenv("R2_BUCKET_NAME")
+    if not bucket:
+        raise R2Error("R2_BUCKET_NAME not set")
+
+    key = f"digests/{date_str}.pdf"
+    try:
+        get_client().delete_object(Bucket=bucket, Key=key)
+    except Exception as e:
+        raise R2Error(f"Failed to delete {key}: {e}") from e

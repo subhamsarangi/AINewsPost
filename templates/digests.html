@@ -16,6 +16,17 @@
         </div>
     </div>
 
+    <div id="activePipelineControls" style="display: none;" class="flex items-center gap-3">
+        <button
+            id="stopPipelineBtn"
+            onclick="stopPipeline()"
+            class="px-4 py-2 bg-red-700 text-white rounded hover:bg-red-800 disabled:opacity-50"
+        >
+            Stop generation
+        </button>
+        <span id="pipelineState" class="text-sm text-gray-400"></span>
+    </div>
+
     <!-- Today's digest -->
     {% if is_future %}
     <div class="bg-purple-900 border border-purple-700 text-purple-200 px-6 py-8 rounded text-center">
@@ -95,6 +106,9 @@
         </button>
     </div>
     
+    {% endif %}
+    {% endif %}
+
     <!-- Live logs during generation -->
     <div id="logBox" style="display: none;" class="bg-gray-900 border border-gray-600 rounded p-4 mt-4">
         <div class="text-xs font-semibold text-gray-400 mb-2">GENERATION LOG</div>
@@ -102,8 +116,6 @@
             <!-- Logs appear here -->
         </div>
     </div>
-    {% endif %}
-    {% endif %}
 
     <script>
         const digests = {{ digests|safe }};
@@ -111,6 +123,7 @@
         const selectedDate = '{{ selected_date }}';
         let digestPollTimer = null;
         let digestPollInFlight = false;
+        let stopRequested = false;
         
         // Test toastr
         if (typeof toastr !== 'undefined') {
@@ -121,13 +134,9 @@
         (async () => {
             const res = await fetch(`/api/digest/${selectedDate}/status`, { credentials: 'include' });
             const data = await res.json();
-            if (data.status === 'generating') {
-                const btn = document.getElementById('generateBtn');
-                if (btn) {
-                    btn.disabled = true;
-                    btn.innerHTML = '<span class="inline-block animate-spin">⏳</span> Still generating...';
-                    pollDigestStatus();
-                }
+            updatePipelineControls(data.status);
+            if (data.status === 'generating' || data.status === 'stopping') {
+                pollDigestStatus();
             }
         })();
         
@@ -199,18 +208,84 @@
                 const res = await fetch(`/api/digest/{{ selected_date }}/generate`, { method: 'POST' });
                 const data = await res.json();
                 
-                if (data.status === 'generating') {
-                    toastr.info('Digest generation started');
+                if (data.status === 'generating' || data.status === 'stopping') {
+                    updatePipelineControls(data.status);
+                    toastr.info(data.message || 'Digest generation started');
                     pollDigestStatus();
                 } else if (data.status === 'error') {
                     toastr.error(data.message || 'Failed to start generation');
                     btn.disabled = false;
                     btn.innerHTML = '✨ Generate Digest';
+                } else {
+                    updatePipelineControls(data.status);
+                    btn.disabled = false;
+                    btn.innerHTML = '✨ Generate Digest';
+                    toastr.info(data.message || 'No pipeline is running for this day.');
                 }
             } catch (e) {
                 toastr.error('Error: ' + e.message);
                 btn.disabled = false;
                 btn.innerHTML = '✨ Generate Digest';
+            }
+        }
+
+        function updatePipelineControls(status) {
+            const active = status === 'generating' || status === 'stopping';
+            const controls = document.getElementById('activePipelineControls');
+            const stopBtn = document.getElementById('stopPipelineBtn');
+            const state = document.getElementById('pipelineState');
+            const generateBtn = document.getElementById('generateBtn');
+
+            controls.style.display = active ? 'flex' : 'none';
+            if (stopBtn) {
+                stopBtn.disabled = status === 'stopping';
+                stopBtn.textContent = status === 'stopping'
+                    ? 'Stopping…'
+                    : 'Stop generation';
+            }
+            if (state) {
+                state.textContent = status === 'stopping' ? 'Waiting for a safe stop point…' : '';
+            }
+            if (generateBtn && active) {
+                generateBtn.disabled = true;
+                generateBtn.textContent = status === 'stopping' ? 'Stopping…' : '⏳ Generating…';
+            }
+        }
+
+        async function stopPipeline() {
+            const stopBtn = document.getElementById('stopPipelineBtn');
+            stopBtn.disabled = true;
+            stopBtn.textContent = 'Stopping…';
+
+            try {
+                const res = await fetch(`/api/digest/${selectedDate}/stop`, {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                const data = await res.json();
+
+                if (data.status === 'stopping') {
+                    stopRequested = true;
+                    updatePipelineControls('stopping');
+                    pollDigestStatus();
+                } else if (data.status === 'stopped') {
+                    toastr.success("Generation stopped; this day's digest was removed.");
+                    window.location.reload();
+                } else if (data.status === 'error') {
+                    stopBtn.disabled = false;
+                    stopBtn.textContent = 'Stop generation';
+                    toastr.error(data.message || 'Could not stop the pipeline');
+                } else {
+                    updatePipelineControls(data.status);
+                    toastr.info(data.status === 'done'
+                        ? 'The pipeline already finished.'
+                        : 'No active pipeline for this day.');
+                    window.location.reload();
+                }
+            } catch (e) {
+                stopBtn.disabled = false;
+                stopBtn.textContent = 'Stop generation';
+                toastr.error('Error: ' + e.message);
             }
         }
         
@@ -231,6 +306,7 @@
                 try {
                     const res = await fetch(`/api/digest/{{ selected_date }}/status`, { credentials: 'include' });
                     const data = await res.json();
+                    updatePipelineControls(data.status);
                     
                     const logRes = await fetch(`/api/digest/{{ selected_date }}/logs`, { credentials: 'include' });
                     const logData = await logRes.json();
@@ -253,24 +329,31 @@
                         toastr.success('Digest ready!');
                         keepPolling = false;
                         setTimeout(() => window.location.reload(), 1500);
+                    } else if (data.status === 'none') {
+                        keepPolling = false;
+                        if (stopRequested) {
+                            toastr.success("Generation stopped; this day's digest was removed.");
+                        }
+                        setTimeout(() => window.location.reload(), 1000);
                     } else if (data.status === 'no_items') {
                         toastr.info(data.message || 'No items to digest for this period');
                         keepPolling = false;
-                        btn.disabled = false;
-                        btn.innerHTML = '✨ Generate Digest';
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.innerHTML = '✨ Generate Digest';
+                        }
                         logBox.style.display = 'none';
                     } else if (data.status === 'error') {
                         toastr.error(data.message);
                         keepPolling = false;
-                        btn.disabled = false;
-                        btn.innerHTML = '✨ Generate Digest';
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.innerHTML = '✨ Generate Digest';
+                        }
                         logBox.style.display = 'none';
                     } else if (attempts >= maxAttempts) {
-                        toastr.warning('Generation timeout');
+                        toastr.warning('Still running. You can stop the pipeline from here.');
                         keepPolling = false;
-                        btn.disabled = false;
-                        btn.innerHTML = '✨ Generate Digest';
-                        logBox.style.display = 'none';
                     }
                 } catch (e) {
                     console.error('Poll error:', e);

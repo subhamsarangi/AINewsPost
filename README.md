@@ -12,7 +12,7 @@ uv sync
 
 uv run playwright install chromium 
 
-docker compose up -d
+# docker compose up -d
 
 uv run pytest -q
 
