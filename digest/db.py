@@ -623,6 +623,7 @@ def digest_items(conn, digest_id: int) -> list[Row]:
 def record_bg_task(conn, task_key: str, status: str, result=None, error=None) -> None:
     """Record or update a background task status."""
     import json
+
     conn.execute(
         """INSERT INTO bg_tasks (task_key, status, result, error, updated_at)
            VALUES (%s, %s, %s, %s, now())
@@ -631,6 +632,23 @@ def record_bg_task(conn, task_key: str, status: str, result=None, error=None) ->
                error = EXCLUDED.error, updated_at = now()""",
         (task_key, status, json.dumps(result) if result else None, error),
     )
+
+
+def start_bg_task(conn, task_key: str) -> bool:
+    """Start a task if it is not already running, clearing logs from prior runs."""
+    row = conn.execute(
+        """INSERT INTO bg_tasks (task_key, status, result, error, updated_at)
+           VALUES (%s, 'generating', NULL, NULL, now())
+           ON CONFLICT (task_key) DO UPDATE
+           SET status = 'generating', result = NULL, error = NULL, updated_at = now()
+           WHERE bg_tasks.status <> 'generating'
+           RETURNING task_key""",
+        (task_key,),
+    ).fetchone()
+    if not row:
+        return False
+    conn.execute("DELETE FROM bg_logs WHERE task_key = %s", (task_key,))
+    return True
 
 
 def get_bg_task(conn, task_key: str) -> Row | None:

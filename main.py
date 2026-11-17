@@ -453,8 +453,13 @@ async def generate_digest(
 
         try:
             with db.connect() as conn:
-                db.record_bg_task(conn, task_key, "generating")
+                started = db.start_bg_task(conn, task_key)
                 conn.commit()
+            if not started:
+                return {
+                    "status": "generating",
+                    "message": "Digest generation is already in progress",
+                }
             print(f"✓ Task row created: {task_key}")
         except Exception as e:
             print(f"✗ Failed to create task row: {e}")

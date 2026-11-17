@@ -109,6 +109,8 @@
         const digests = {{ digests|safe }};
         const today = new Date();
         const selectedDate = '{{ selected_date }}';
+        let digestPollTimer = null;
+        let digestPollInFlight = false;
         
         // Test toastr
         if (typeof toastr !== 'undefined') {
@@ -213,14 +215,19 @@
         }
         
         async function pollDigestStatus() {
+            if (digestPollTimer !== null || digestPollInFlight) return;
+
             const btn = document.getElementById('generateBtn');
             const logBox = document.getElementById('logBox');
             const logContent = document.getElementById('logContent');
             let attempts = 0;
             const maxAttempts = 180;
-            
-            const poll = setInterval(async () => {
+
+            const poll = async () => {
+                digestPollTimer = null;
+                digestPollInFlight = true;
                 attempts++;
+                let keepPolling = true;
                 try {
                     const res = await fetch(`/api/digest/{{ selected_date }}/status`, { credentials: 'include' });
                     const data = await res.json();
@@ -244,31 +251,36 @@
                     
                     if (data.status === 'done') {
                         toastr.success('Digest ready!');
-                        clearInterval(poll);
+                        keepPolling = false;
                         setTimeout(() => window.location.reload(), 1500);
                     } else if (data.status === 'no_items') {
                         toastr.info(data.message || 'No items to digest for this period');
-                        clearInterval(poll);
+                        keepPolling = false;
                         btn.disabled = false;
                         btn.innerHTML = '✨ Generate Digest';
                         logBox.style.display = 'none';
                     } else if (data.status === 'error') {
                         toastr.error(data.message);
-                        clearInterval(poll);
+                        keepPolling = false;
                         btn.disabled = false;
                         btn.innerHTML = '✨ Generate Digest';
                         logBox.style.display = 'none';
                     } else if (attempts >= maxAttempts) {
                         toastr.warning('Generation timeout');
-                        clearInterval(poll);
+                        keepPolling = false;
                         btn.disabled = false;
                         btn.innerHTML = '✨ Generate Digest';
                         logBox.style.display = 'none';
                     }
                 } catch (e) {
                     console.error('Poll error:', e);
+                } finally {
+                    digestPollInFlight = false;
+                    if (keepPolling) digestPollTimer = setTimeout(poll, 2000);
                 }
-            }, 2000);
+            };
+
+            digestPollTimer = setTimeout(poll, 0);
         }
     </script>
 </div>
