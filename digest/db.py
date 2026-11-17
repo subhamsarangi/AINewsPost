@@ -101,7 +101,10 @@ def connect(retries: int = 3) -> psycopg.Connection:
     for attempt in range(1, retries + 1):
         try:
             conn = psycopg.connect(
-                get_settings().database_url, row_factory=dict_row, connect_timeout=5
+                get_settings().database_url,
+                row_factory=dict_row,
+                connect_timeout=5,
+                prepare_threshold=None,
             )
             break
         except psycopg.OperationalError as e:
@@ -197,20 +200,15 @@ def _np(v) -> np.ndarray | None:
 def sync_sources(conn, sources: list[dict], owner_id: str | None = None) -> None:
     """Mirror sources.yaml into the sources table (yaml stays the truth)."""
     for s in sources:
-        try:
-            conn.execute(
-                """INSERT INTO sources (id, name, type, category, owner)
-                   VALUES (%s, %s, %s, %s, %s)
-                   ON CONFLICT (id) DO UPDATE
-                   SET name = EXCLUDED.name, type = EXCLUDED.type,
-                       category = EXCLUDED.category""",
-                (s["id"], s["name"], s["type"], s.get("category"), owner_id),
-                prepare=False,
-            )
-        except psycopg.errors.DuplicatePreparedStatement as e:
-            log.warning(f"Prepared statement collision for source {s['id']}, closing connection")
-            conn.close()
-            raise  # Let caller handle reconnect
+        conn.execute(
+            """INSERT INTO sources (id, name, type, category, owner)
+               VALUES (%s, %s, %s, %s, %s)
+               ON CONFLICT (id) DO UPDATE
+               SET name = EXCLUDED.name, type = EXCLUDED.type,
+                   category = EXCLUDED.category""",
+            (s["id"], s["name"], s["type"], s.get("category"), owner_id),
+            prepare=False,
+        )
 
 
 def get_last_fetch(conn, source_id: str) -> datetime | None:
@@ -652,9 +650,12 @@ def add_bg_log(conn, task_key: str, message: str) -> None:
 
 
 def get_bg_logs(conn, task_key: str, limit: int = 100) -> list[Row]:
-    """Get all logs for a task."""
+    """Get the most recent logs for a task in chronological order."""
     return conn.execute(
-        "SELECT message, created_at FROM bg_logs WHERE task_key = %s ORDER BY created_at DESC LIMIT %s",
+        """SELECT id, message, created_at FROM (
+               SELECT id, message, created_at FROM bg_logs
+               WHERE task_key = %s ORDER BY id DESC LIMIT %s
+           ) recent_logs ORDER BY id ASC""",
         (task_key, limit),
     ).fetchall()
 

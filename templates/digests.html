@@ -218,7 +218,6 @@
             const logContent = document.getElementById('logContent');
             let attempts = 0;
             const maxAttempts = 180;
-            let lastLogCount = 0;
             
             const poll = setInterval(async () => {
                 attempts++;
@@ -229,18 +228,18 @@
                     const logRes = await fetch(`/api/digest/{{ selected_date }}/logs`, { credentials: 'include' });
                     const logData = await logRes.json();
                     
-                    // Add new logs to UI
-                    if (logData.logs.length > lastLogCount) {
+                    // Refresh the snapshot; the API returns the latest logs chronologically.
+                    if (logData.logs.length) {
                         logBox.style.display = 'block';
-                        for (let i = lastLogCount; i < logData.logs.length; i++) {
+                        logContent.textContent = '';
+                        for (const log of logData.logs) {
                             const logLine = document.createElement('div');
-                            logLine.textContent = logData.logs[i].message;
+                            logLine.textContent = log.message;
                             logLine.className = 'text-gray-300';
                             logContent.appendChild(logLine);
                         }
                         // Auto-scroll to bottom
                         logContent.scrollTop = logContent.scrollHeight;
-                        lastLogCount = logData.logs.length;
                     }
                     
                     if (data.status === 'done') {
