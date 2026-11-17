@@ -51,3 +51,19 @@ def test_finish_bg_task_does_not_overwrite_a_stop_request():
     conn.execute.return_value.fetchone.return_value = None
 
     assert not db.finish_bg_task(conn, "digest_gen_2026-11-17", "done")
+
+
+def test_finish_stopped_bg_task_records_cleanup_completion():
+    conn = Mock()
+    conn.execute.return_value.fetchone.return_value = {"task_key": "digest_gen_2026-11-17"}
+
+    assert db.finish_stopped_bg_task(conn, "digest_gen_2026-11-17")
+    assert "status = 'stopped'" in conn.execute.call_args.args[0]
+
+
+def test_consume_stopped_bg_task_removes_only_terminal_marker():
+    conn = Mock()
+    conn.execute.return_value.fetchone.return_value = {"task_key": "digest_gen_2026-11-17"}
+
+    assert db.consume_stopped_bg_task(conn, "digest_gen_2026-11-17")
+    assert "status = 'stopped'" in conn.execute.call_args.args[0]

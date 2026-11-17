@@ -51,7 +51,11 @@ def _cleanup_stopped_pipeline(digest_date: date, task_key: str) -> bool:
         r2.delete(digest_date.isoformat())
         with db.connect() as conn:
             db.delete_digest(conn, digest_date)
-            if not db.delete_stopped_bg_task(conn, task_key):
+            db.clear_bg_logs(conn, task_key)
+            conn.commit()
+        log.info("Stopped pipeline and cleaned date-specific outputs for %s", digest_date)
+        with db.connect() as conn:
+            if not db.finish_stopped_bg_task(conn, task_key):
                 raise RuntimeError("The pipeline task was no longer marked as stopping")
             conn.commit()
     except Exception as e:
@@ -67,7 +71,6 @@ def _cleanup_stopped_pipeline(digest_date: date, task_key: str) -> bool:
             log.exception("Failed to record stopped-pipeline cleanup error")
         return False
 
-    log.info("Stopped pipeline and cleaned date-specific outputs for %s", digest_date)
     return True
 
 
@@ -587,7 +590,11 @@ async def digest_status(
         task = db.get_bg_task(conn, task_key)
         if task:
             status = task["status"]
-            if status == "done":
+            if status == "stopped":
+                db.consume_stopped_bg_task(conn, task_key)
+                conn.commit()
+                return {"status": "stopped"}
+            elif status == "done":
                 result = (
                     task["result"]
                     if isinstance(task["result"], dict)

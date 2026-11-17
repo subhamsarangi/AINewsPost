@@ -254,6 +254,8 @@
 
         async function stopPipeline() {
             const stopBtn = document.getElementById('stopPipelineBtn');
+            stopRequested = true;
+            updatePipelineControls('stopping');
             stopBtn.disabled = true;
             stopBtn.textContent = 'Stopping…';
 
@@ -265,17 +267,21 @@
                 const data = await res.json();
 
                 if (data.status === 'stopping') {
-                    stopRequested = true;
                     updatePipelineControls('stopping');
                     pollDigestStatus();
                 } else if (data.status === 'stopped') {
                     toastr.success("Generation stopped; this day's digest was removed.");
                     window.location.reload();
                 } else if (data.status === 'error') {
-                    stopBtn.disabled = false;
-                    stopBtn.textContent = 'Stop generation';
+                    stopRequested = false;
+                    updatePipelineControls('error');
                     toastr.error(data.message || 'Could not stop the pipeline');
+                } else if (data.status === 'generating') {
+                    stopRequested = false;
+                    updatePipelineControls('generating');
+                    toastr.error('The stop request was not accepted. Try again.');
                 } else {
+                    stopRequested = false;
                     updatePipelineControls(data.status);
                     toastr.info(data.status === 'done'
                         ? 'The pipeline already finished.'
@@ -283,8 +289,8 @@
                     window.location.reload();
                 }
             } catch (e) {
-                stopBtn.disabled = false;
-                stopBtn.textContent = 'Stop generation';
+                stopRequested = false;
+                updatePipelineControls('generating');
                 toastr.error('Error: ' + e.message);
             }
         }
@@ -306,7 +312,11 @@
                 try {
                     const res = await fetch(`/api/digest/{{ selected_date }}/status`, { credentials: 'include' });
                     const data = await res.json();
-                    updatePipelineControls(data.status);
+                    updatePipelineControls(
+                        stopRequested && data.status === 'generating'
+                            ? 'stopping'
+                            : data.status
+                    );
                     
                     const logRes = await fetch(`/api/digest/{{ selected_date }}/logs`, { credentials: 'include' });
                     const logData = await logRes.json();
@@ -329,6 +339,10 @@
                         toastr.success('Digest ready!');
                         keepPolling = false;
                         setTimeout(() => window.location.reload(), 1500);
+                    } else if (data.status === 'stopped') {
+                        keepPolling = false;
+                        toastr.success("Generation stopped; this day's digest was removed.");
+                        setTimeout(() => window.location.reload(), 1000);
                     } else if (data.status === 'none') {
                         keepPolling = false;
                         if (stopRequested) {

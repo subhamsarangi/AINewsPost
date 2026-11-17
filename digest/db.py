@@ -681,18 +681,30 @@ def finish_bg_task(
     return row is not None
 
 
-def delete_stopped_bg_task(conn, task_key: str) -> bool:
-    """Delete task metadata and logs only after a requested stop is complete."""
+def clear_bg_logs(conn, task_key: str) -> None:
+    conn.execute("DELETE FROM bg_logs WHERE task_key = %s", (task_key,))
+
+
+def finish_stopped_bg_task(conn, task_key: str) -> bool:
+    """Mark a task stopped after date-specific cleanup has completed."""
     row = conn.execute(
-        """DELETE FROM bg_tasks
+        """UPDATE bg_tasks SET status = 'stopped', updated_at = now()
            WHERE task_key = %s AND status = 'stopping'
            RETURNING task_key""",
         (task_key,),
     ).fetchone()
-    if not row:
-        return False
-    conn.execute("DELETE FROM bg_logs WHERE task_key = %s", (task_key,))
-    return True
+    return row is not None
+
+
+def consume_stopped_bg_task(conn, task_key: str) -> bool:
+    """Remove the terminal stop marker once the UI has observed it."""
+    row = conn.execute(
+        """DELETE FROM bg_tasks
+           WHERE task_key = %s AND status = 'stopped'
+           RETURNING task_key""",
+        (task_key,),
+    ).fetchone()
+    return row is not None
 
 
 def get_bg_task(conn, task_key: str) -> Row | None:
